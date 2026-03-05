@@ -1,0 +1,33 @@
+import os
+import sys
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+# Use isolated DB for tests (prevents clashes with running dev servers)
+os.environ["TRAINERAPP_DATABASE_URL"] = "sqlite:///./test.db"
+
+# Ensure backend/ is on sys.path for imports like `app.main`
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.main import app
+from app.scripts import seed
+
+
+@pytest.fixture()
+def client() -> TestClient:
+    # Fresh DB for each test (thesis-friendly determinism over speed)
+    seed.main()
+    return TestClient(app)
+
+
+def login_and_get_token(client: TestClient, email: str, password: str) -> str:
+    res = client.post("/auth/login", json={"email": email, "password": password})
+    assert res.status_code == 200, res.text
+    return res.json()["access_token"]
+
+
+def auth_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
