@@ -116,6 +116,8 @@ Na obrazovce vidíte:
 
 V horní části sekce Hráči je rozbalovací pole **Sezóna**.
 
+![Výběr sezóny](docs/sezona.png)
+
 Postup:
 1. Klikněte na pole **Sezóna**.
 2. Vyberte požadovanou sezónu.
@@ -165,8 +167,7 @@ Tato sekce slouží k práci se zápasy.
 ### [Obrázek: Sekce Zápasy]
 
 ![Sekce Zápasy – vytvoření zápasu](docs/zapasy.png)
-![Sekce Zápasy – vytvoření zápasu](file:///Users/mates/Bakalarska_prace/docs/zapasy.png)
-_Když se obrázek nezobrazí v náhledu, otevřete ho přímo: [docs/zapasy.png](docs/zapasy.png)_
+
 
 ### 7.1 Vytvoření zápasu
 
@@ -183,6 +184,8 @@ Po vytvoření:
 ➡️ automaticky přecházíte na sestavu.
 
 ### 7.2 Práce s existujícím zápasem
+
+![Přehled existujících zápasů](docs/prehled-zapasu.png)
 
 U každého zápasu:
 - **Sestava** → příprava před zápasem,
@@ -206,8 +209,7 @@ Zde určujete, kdo nastoupí do zápasu.
 ### [Obrázek: Sekce Sestava]
 
 ![Sekce Sestava – role hráčů a dresy](docs/sestava.png)
-![Sekce Sestava – role hráčů a dresy](file:///Users/mates/Bakalarska_prace/docs/sestava.png)
-_Když se obrázek nezobrazí v náhledu, otevřete ho přímo: [docs/sestava.png](docs/sestava.png)_
+
 
 ### 8.1 Role hráčů
 - **Hraje** → základní sestava,
@@ -233,6 +235,8 @@ Tato sekce se používá během zápasu v reálném čase.
 **[Obrázek: Live zápas]**
 
 ### 9.1 Spuštění zápasu
+![Spuštění zápasu](docs/spusteni-zapasu.png)
+
 - klikněte na **Start 1st Half**,
 - čas začne běžet od `00:00`.
 
@@ -242,6 +246,7 @@ Tato sekce se používá během zápasu v reálném čase.
 - pokračuje ve 2. poločase.
 
 ### 9.3 Zapisování událostí
+![Zapisování událostí](docs/zapis-udalosti.png)
 
 Každý hráč má vlastní řádek.
 
@@ -264,6 +269,7 @@ Praktické použití:
 - čas pokračuje.
 
 ### 9.6 Střídání
+![Střídání hráčů](docs/stridani.png)
 
 Postup:
 1. vyberte hráče dolů,
@@ -297,6 +303,7 @@ Obvyklý další krok:
 ## 11. Hodnocení hráčů
 
 Po zápase můžete hodnotit hráče v sekci Evaluation.
+![Hodnocení trenéra](docs/hodnoceni-trener.png)
 
 ### [Obrázek: Hodnocení hráčů]
 
