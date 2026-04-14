@@ -21,17 +21,17 @@ Aplikace je navržena tak, aby byla použitelná přímo během utkání – bez
 
 Trainer App pokrývá celý proces práce se zápasem:
 
-### 🔹 Před zápasem
+###  Před zápasem
 - správa hráčů (ručně nebo importem),
 - vytvoření zápasu,
 - příprava sestavy a rolí hráčů.
 
-### 🔹 Během zápasu
+###  Během zápasu
 - live zapisování událostí,
 - evidence střídání,
 - řízení času zápasu.
 
-### 🔹 Po zápase
+###  Po zápase
 - uzavření zápasu,
 - hodnocení hráčů,
 - statistiky a analytika.
