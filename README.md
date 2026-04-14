@@ -41,14 +41,14 @@ Trainer App pokrývá celý proces práce se zápasem:
 ## 3. Co aplikace umožňuje
 
 Z pohledu běžného uživatele aplikace umožňuje:
-- spravovat hráče,
-- vytvářet zápasy,
-- připravovat sestavu,
-- zapisovat live statistiky (+ / -),
-- provádět střídání,
-- ukončit zápas,
-- vyhodnotit hráče,
-- číst statistiky a analytiku.
+- [spravovat hráče](#sprava-hracu),
+- [vytvářet zápasy](#vytvoreni-zapasu),
+- [připravovat sestavu](#priprava-sestavy),
+- [zapisovat live statistiky (+ / -)](#zapisovani-udalosti),
+- [provádět střídání](#stridani),
+- [ukončit zápas](#ukonceni-zapasu),
+- [vyhodnotit hráče](#hodnoceni-hracu),
+- [číst statistiky a analytiku](#statistiky-a-analytika).
 
 ---
 
@@ -92,6 +92,7 @@ Tento postup odpovídá reálnému průběhu zápasu a minimalizuje chyby.
 
 ---
 
+<a id="sprava-hracu"></a>
 ## 6. Sekce Hráči (Players)
 
 Tato sekce slouží ke správě soupisky týmu.
@@ -171,6 +172,7 @@ Tato sekce slouží k práci se zápasy.
 ![Sekce Zápasy – vytvoření zápasu](docs/zapasy.png)
 
 
+<a id="vytvoreni-zapasu"></a>
 ### 7.1 Vytvoření zápasu
 
 Vyplňte:
@@ -204,6 +206,7 @@ Doporučení:
 
 ---
 
+<a id="priprava-sestavy"></a>
 ## 8. Sestava před zápasem
 
 Zde určujete, kdo nastoupí do zápasu.
@@ -247,6 +250,7 @@ Tato sekce se používá během zápasu v reálném čase.
 - zastavuje se v poločase,
 - pokračuje ve 2. poločase.
 
+<a id="zapisovani-udalosti"></a>
 ### 9.3 Zapisování událostí
 ![Zapisování událostí](docs/zapis-udalosti.png)
 
@@ -270,6 +274,7 @@ Praktické použití:
 - klikněte na **Start 2nd Half**,
 - čas pokračuje.
 
+<a id="stridani"></a>
 ### 9.6 Střídání
 ![Střídání hráčů](docs/stridani.png)
 
@@ -283,6 +288,7 @@ Výsledek:
 - uložení času střídání,
 - hráč mimo hřiště už nemá události.
 
+<a id="ukonceni-zapasu"></a>
 ### 9.7 Ukončení zápasu
 - klikněte na **Finish Match**,
 - zápas se uzavře,
@@ -302,6 +308,7 @@ Obvyklý další krok:
 
 ---
 
+<a id="hodnoceni-hracu"></a>
 ## 11. Hodnocení hráčů
 
 Po zápase můžete hodnotit hráče v sekci Evaluation.
@@ -322,6 +329,7 @@ Důležité:
 
 ---
 
+<a id="statistiky-a-analytika"></a>
 ## 12. Statistiky a analytika
 
 Sekce: **Report / Analytics**
