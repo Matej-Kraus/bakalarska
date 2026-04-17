@@ -16,6 +16,7 @@ from app.api.routes.lineup import router as lineup_router
 from app.api.routes.stats import router as stats_router
 from app.api.routes.reports import router as reports_router
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.settings import settings
 
 app = FastAPI(title="Trainer App API", version="0.1.0")
 
@@ -28,9 +29,17 @@ def app_error_handler(request: Request, exc: AppError):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        settings.frontend_base_url.rstrip("/"),
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+        "http://localhost:5176",
+        "http://127.0.0.1:5176",
     ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

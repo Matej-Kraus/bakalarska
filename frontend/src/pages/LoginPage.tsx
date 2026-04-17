@@ -1,12 +1,11 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
-import { verifyEmail } from "@/api/auth";
 
 function getErrorMessage(e: unknown): string {
   if (axios.isAxiosError(e)) {
@@ -21,7 +20,6 @@ function getErrorMessage(e: unknown): string {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const auth = useAuth();
 
   const [registerClubName, setRegisterClubName] = useState("");
@@ -36,40 +34,13 @@ export default function LoginPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
-  useEffect(() => {
-    const token = searchParams.get("verify_token");
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await verifyEmail(token);
-        if (cancelled) return;
-        setRegisterSuccess(res.message);
-        setRegisterError(null);
-      } catch (e: unknown) {
-        if (cancelled) return;
-        setRegisterError(getErrorMessage(e));
-      } finally {
-        if (cancelled) return;
-        const next = new URLSearchParams(searchParams);
-        next.delete("verify_token");
-        setSearchParams(next, { replace: true });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [searchParams, setSearchParams]);
-
   async function submitRegister() {
     try {
       setRegisterError(null);
       setRegisterSuccess(null);
       setRegisterSubmitting(true);
       await auth.register(registerClubName.trim(), registerEmail.trim(), registerPassword);
-      setRegisterSuccess(
-        "Registrace proběhla. Ověřovací e-mail byl odeslán. Po ověření se přihlas vpravo.",
-      );
+      navigate("/club?onboarding=1", { replace: true });
     } catch (e: unknown) {
       setRegisterError(getErrorMessage(e));
     } finally {

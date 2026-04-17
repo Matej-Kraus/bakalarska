@@ -21,7 +21,7 @@ export async function me() {
 }
 
 export async function register(club_name: string, email: string, password: string) {
-  const res = await api.post<{ ok: boolean; message: string }>("/auth/register", {
+  const res = await api.post<AuthSuccess>("/auth/register", {
     club_name,
     email,
     password,

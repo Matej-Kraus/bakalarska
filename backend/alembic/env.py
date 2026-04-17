@@ -12,11 +12,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import models and metadata for autogenerate
 from app.db.database import Base  # noqa: E402
+from app.core.settings import settings  # noqa: E402
 from app import models  # noqa: F401,E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -73,11 +75,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        db_url = config.get_main_option("sqlalchemy.url")
+        is_sqlite = db_url.startswith("sqlite")
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            render_as_batch=True,  # SQLite-friendly ALTER TABLE operations
+            render_as_batch=is_sqlite,  # Only needed for SQLite ALTER TABLE operations.
         )
 
         with context.begin_transaction():

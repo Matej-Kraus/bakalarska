@@ -55,7 +55,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.user);
       },
       register: async (clubName: string, email: string, password: string) => {
-        await authApi.register(clubName, email, password);
+        const res = await authApi.register(clubName, email, password);
+        setAccessToken(res.access_token);
+        setToken(res.access_token);
+        setUser(res.user);
       },
       logout: () => {
         clearAccessToken();

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { LiveMatchHeader } from "@/features/live-match/components/LiveMatchHeader";
 import { RosterEventsCard } from "@/features/live-match/components/RosterEventsCard";
 import { RatingsCard } from "@/features/live-match/components/RatingsCard";
-import { TimelineCard } from "@/features/live-match/components/TimelineCard";
 import { SubstitutionsCard } from "@/features/live-match/components/SubstitutionsCard";
 import { useLiveMatchData, getErrorMessage } from "@/features/live-match/useLiveMatchData";
 import { useAuth } from "@/auth/AuthContext";
@@ -290,7 +289,6 @@ export default function LiveMatchPage() {
         </Card>
       )}
 
-      <TimelineCard events={lastEvents} roster={roster as RosterWithStatsRow[]} />
     </div>
   );
 }

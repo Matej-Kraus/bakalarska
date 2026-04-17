@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { useAuth } from "@/auth/AuthContext";
@@ -39,6 +40,8 @@ function statusLabel(status: MatchStatus | null) {
   return status;
 }
 
+type PendingAction = "start_1" | "half_time" | "start_2" | "finish";
+
 export function LiveMatchHeader({
   matchId,
   status,
@@ -59,11 +62,43 @@ export function LiveMatchHeader({
 }: Props) {
   const auth = useAuth();
   const isCoach = auth.user?.role === "coach";
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const canStart = status === "planned";
   const canHalfTime = status === "live_half_1";
   const canStartSecond = status === "half_time";
   const canFinish = status === "live_half_1" || status === "live_half_2";
+
+  const pendingQuestion =
+    pendingAction === "start_1"
+      ? "Opravdu chcete zahájit 1. poločas?"
+      : pendingAction === "half_time"
+        ? "Opravdu chcete ukončit 1. poločas a přejít na poločas?"
+        : pendingAction === "start_2"
+          ? "Opravdu chcete zahájit 2. poločas?"
+          : pendingAction === "finish"
+            ? "Opravdu chcete ukončit zápas?"
+            : null;
+
+  const confirmPendingAction = async () => {
+    if (!pendingAction) return;
+    setError(null);
+    try {
+      if (pendingAction === "start_1") {
+        await onStart();
+      } else if (pendingAction === "half_time") {
+        await onHalfTime();
+      } else if (pendingAction === "start_2") {
+        await onStartSecondHalf();
+      } else {
+        await onFinish();
+      }
+    } catch (e: unknown) {
+      setError(getErrorMessage(e));
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   return (
     <div className="flex w-full items-center justify-between gap-3 flex-wrap">
@@ -86,14 +121,7 @@ export function LiveMatchHeader({
           <>
             <Button
               className="h-10 px-3 text-xs"
-              onClick={async () => {
-                setError(null);
-                try {
-                  await onStart();
-                } catch (e: unknown) {
-                  setError(getErrorMessage(e));
-                }
-              }}
+              onClick={() => setPendingAction("start_1")}
               disabled={!canStart || starting}
             >
               Start 1. poločas
@@ -101,14 +129,7 @@ export function LiveMatchHeader({
             <Button
               className="h-10 px-3 text-xs"
               variant="outline"
-              onClick={async () => {
-                setError(null);
-                try {
-                  await onHalfTime();
-                } catch (e: unknown) {
-                  setError(getErrorMessage(e));
-                }
-              }}
+              onClick={() => setPendingAction("half_time")}
               disabled={!canHalfTime || halfTiming}
             >
               Poločas
@@ -116,14 +137,7 @@ export function LiveMatchHeader({
             <Button
               className="h-10 px-3 text-xs"
               variant="outline"
-              onClick={async () => {
-                setError(null);
-                try {
-                  await onStartSecondHalf();
-                } catch (e: unknown) {
-                  setError(getErrorMessage(e));
-                }
-              }}
+              onClick={() => setPendingAction("start_2")}
               disabled={!canStartSecond || startingSecond}
             >
               Start 2. poločas
@@ -131,14 +145,7 @@ export function LiveMatchHeader({
             <Button
               className="h-10 px-3 text-xs"
               variant="outline"
-              onClick={async () => {
-                setError(null);
-                try {
-                  await onFinish();
-                } catch (e: unknown) {
-                  setError(getErrorMessage(e));
-                }
-              }}
+              onClick={() => setPendingAction("finish")}
               disabled={!canFinish || finishing}
             >
               Ukončit
@@ -146,6 +153,24 @@ export function LiveMatchHeader({
           </>
         )}
       </div>
+
+      {pendingQuestion && (
+        <div className="w-full rounded-xl border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm flex items-center justify-between gap-2">
+          <span>{pendingQuestion}</span>
+          <div className="flex items-center gap-2">
+            <Button className="h-8 px-3 text-xs" onClick={confirmPendingAction}>
+              Ano
+            </Button>
+            <Button
+              className="h-8 px-3 text-xs"
+              variant="outline"
+              onClick={() => setPendingAction(null)}
+            >
+              Ne
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

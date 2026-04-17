@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +22,11 @@ function getErrorMessage(err: unknown): string {
 }
 
 export default function ClubSettingsPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const auth = useAuth();
   const isCoach = auth.user?.role === "coach";
+  const isOnboarding = searchParams.get("onboarding") === "1";
 
   const [name, setName] = useState("");
   const [shortName, setShortName] = useState("");
@@ -73,6 +77,9 @@ export default function ClubSettingsPage() {
       });
       setOk(true);
       window.dispatchEvent(new Event("club-updated"));
+      if (isOnboarding) {
+        navigate("/players", { replace: true });
+      }
     } catch (e) {
       setErr(getErrorMessage(e));
     } finally {
