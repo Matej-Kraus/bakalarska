@@ -37,7 +37,6 @@ export default function LiveMatchPage() {
   const {
     match,
     roster,
-    lastEvents,
     ratings,
     rosterQuery,
     // eventsQuery, // not used directly in this component
