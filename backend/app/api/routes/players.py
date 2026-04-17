@@ -1,11 +1,13 @@
 import csv
 import io
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_role
 from app.models.player import Player
+from app.models.season import Season
+from app.models.season_player import SeasonPlayer
 from app.models.user import User
 from app.schemas.player import PlayerCreate, PlayerOut
 
@@ -17,8 +19,31 @@ def create_player(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("coach")),
 ):
-    player = Player(club_id=current_user.club_id, **payload.model_dump())
+    season_id = payload.season_id
+    if season_id is None:
+        season = (
+            db.query(Season)
+            .filter(Season.club_id == current_user.club_id)
+            .order_by(Season.id.asc())
+            .first()
+        )
+        if not season:
+            raise HTTPException(status_code=400, detail="No season exists for this club")
+        season_id = season.id
+    season = (
+        db.query(Season)
+        .filter(Season.id == season_id, Season.club_id == current_user.club_id)
+        .first()
+    )
+    if not season:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    player_data = payload.model_dump()
+    player_data.pop("season_id", None)
+    player = Player(club_id=current_user.club_id, **player_data)
     db.add(player)
+    db.flush()
+    db.add(SeasonPlayer(season_id=season_id, player_id=player.id))
     db.commit()
     db.refresh(player)
     return player
@@ -27,6 +52,7 @@ def create_player(
 @router.post("/import")
 def import_players_csv(
     file: UploadFile = File(...),
+    season_id: int | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("coach")),
 ):
@@ -50,8 +76,27 @@ def import_players_csv(
             detail=f"Missing required headers. Required: {sorted(required)}",
         )
 
+    if season_id is None:
+        season = (
+            db.query(Season)
+            .filter(Season.club_id == current_user.club_id)
+            .order_by(Season.id.asc())
+            .first()
+        )
+        if not season:
+            raise HTTPException(status_code=400, detail="No season exists for this club")
+        season_id = season.id
+    season = (
+        db.query(Season)
+        .filter(Season.id == season_id, Season.club_id == current_user.club_id)
+        .first()
+    )
+    if not season:
+        raise HTTPException(status_code=404, detail="Season not found")
+
     created = 0
     updated = 0
+    assigned = 0
     errors: list[dict] = []
 
     for i, row in enumerate(reader, start=2):  # header is line 1
@@ -78,31 +123,61 @@ def import_players_csv(
                 existing.last_name = last
                 existing.position = pos
                 updated += 1
-            else:
-                db.add(
-                    Player(
-                        club_id=current_user.club_id,
-                        first_name=first,
-                        last_name=last,
-                        jersey_number=jersey,
-                        position=pos,
+                linked = (
+                    db.query(SeasonPlayer)
+                    .filter(
+                        SeasonPlayer.season_id == season_id,
+                        SeasonPlayer.player_id == existing.id,
                     )
+                    .first()
                 )
+                if not linked:
+                    db.add(SeasonPlayer(season_id=season_id, player_id=existing.id))
+                    assigned += 1
+            else:
+                p = Player(
+                    club_id=current_user.club_id,
+                    first_name=first,
+                    last_name=last,
+                    jersey_number=jersey,
+                    position=pos,
+                )
+                db.add(p)
+                db.flush()
+                db.add(SeasonPlayer(season_id=season_id, player_id=p.id))
                 created += 1
         except Exception as e:  # noqa: BLE001 (CSV row-level error aggregation)
             errors.append({"line": i, "error": str(e), "row": row})
 
     db.commit()
-    return {"ok": True, "created": created, "updated": updated, "errors": errors}
+    return {
+        "ok": True,
+        "created": created,
+        "updated": updated,
+        "assigned": assigned,
+        "season_id": season_id,
+        "errors": errors,
+    }
 
 @router.get("", response_model=list[PlayerOut])
-def list_players(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return (
-        db.query(Player)
-        .filter(Player.club_id == current_user.club_id)
-        .order_by(Player.jersey_number)
-        .all()
-    )
+def list_players(
+    season_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(Player).filter(Player.club_id == current_user.club_id)
+    if season_id is not None:
+        season = (
+            db.query(Season)
+            .filter(Season.id == season_id, Season.club_id == current_user.club_id)
+            .first()
+        )
+        if not season:
+            raise HTTPException(status_code=404, detail="Season not found")
+        q = q.join(SeasonPlayer, SeasonPlayer.player_id == Player.id).filter(
+            SeasonPlayer.season_id == season_id
+        )
+    return q.order_by(Player.jersey_number).all()
 
 @router.delete("/{player_id}")
 def delete_player(

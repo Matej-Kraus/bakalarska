@@ -1,14 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import and_, case, desc, distinct, func
 
 from app.api.deps import get_current_user, get_db
+from app.models.match_event import MatchEvent
 from app.models.match import Match
 from app.models.player import Player
 from app.models.season import Season
 from app.models.match_player_stats import MatchPlayerStats
 from app.models.user import User
-from app.schemas.report import StatsSumOut
+from app.schemas.report import StatsSumOut, TeamSeasonStatsOut
 
 router = APIRouter(tags=["reports"])
 
@@ -151,7 +152,7 @@ def player_stats_last_n(
     return _sum_stats(q)
 
 
-@router.get("/seasons/{season_id}/team-stats", response_model=StatsSumOut)
+@router.get("/seasons/{season_id}/team-stats", response_model=TeamSeasonStatsOut)
 def team_stats_season(
     season_id: int,
     db: Session = Depends(get_db),
@@ -165,9 +166,20 @@ def team_stats_season(
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
 
+    season_matches_total = (
+        db.query(func.count(Match.id))
+        .filter(
+            Match.season_id == season_id,
+            Match.club_id == current_user.club_id,
+        )
+        .scalar()
+        or 0
+    )
+
+    # `games` = number of distinct matches with stat rows (NOT sum over players).
     q = (
         db.query(
-            func.count(MatchPlayerStats.id).label("games"),
+            func.count(distinct(MatchPlayerStats.match_id)).label("games"),
             func.sum(MatchPlayerStats.goals).label("goals"),
             func.sum(MatchPlayerStats.assists).label("assists"),
             func.sum(MatchPlayerStats.errors).label("errors"),
@@ -186,4 +198,50 @@ def team_stats_season(
         .join(Match, Match.id == MatchPlayerStats.match_id)
         .filter(Match.season_id == season_id, Match.club_id == current_user.club_id)
     )
-    return _sum_stats(q)
+    row = q.one()
+
+    def z(x):
+        return int(x or 0)
+
+    p_plus = func.sum(
+        case(
+            (and_(MatchEvent.event_type == "pass", MatchEvent.delta == 1), 1),
+            else_=0,
+        )
+    )
+    p_minus = func.sum(
+        case(
+            (and_(MatchEvent.event_type == "pass", MatchEvent.delta == -1), 1),
+            else_=0,
+        )
+    )
+    pass_row = (
+        db.query(p_plus.label("passes_success"), p_minus.label("passes_unsuccess"))
+        .join(Match, Match.id == MatchEvent.match_id)
+        .filter(
+            Match.season_id == season_id,
+            Match.club_id == current_user.club_id,
+        )
+        .one()
+    )
+
+    return TeamSeasonStatsOut(
+        games=z(row.games),
+        season_matches_total=int(season_matches_total),
+        goals=z(row.goals),
+        assists=z(row.assists),
+        errors=z(row.errors),
+        won_balls=z(row.won_balls),
+        lost_balls=z(row.lost_balls),
+        fouls=z(row.fouls),
+        passes=z(row.passes),
+        won_duels=z(row.won_duels),
+        lost_duels=z(row.lost_duels),
+        shots_on_goal=z(row.shots_on_goal),
+        shots_off_goal=z(row.shots_off_goal),
+        yellow_cards=z(row.yellow_cards),
+        red_cards=z(row.red_cards),
+        penalties=z(row.penalties),
+        passes_success=z(pass_row.passes_success),
+        passes_unsuccess=z(pass_row.passes_unsuccess),
+    )

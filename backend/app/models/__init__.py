@@ -1,6 +1,7 @@
 from .club import Club
 from .player import Player
 from .season import Season
+from .season_player import SeasonPlayer
 from .match import Match
 from .match_event import MatchEvent
 from .match_lineup import MatchLineup

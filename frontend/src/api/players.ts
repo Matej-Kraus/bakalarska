@@ -12,11 +12,14 @@ export type ImportPlayersResult = {
   ok: boolean;
   created: number;
   updated: number;
+  assigned?: number;
+  season_id?: number;
   errors: Array<{ line: number; error: string; row: Record<string, unknown> }>;
 };
 
-export async function listPlayers() {
-  const res = await api.get<Player[]>("/players");
+export async function listPlayers(seasonId?: number) {
+  const params = seasonId != null ? { season_id: seasonId } : undefined;
+  const res = await api.get<Player[]>("/players", { params });
   return res.data;
 }
 
@@ -25,6 +28,7 @@ export async function createPlayer(payload: {
   last_name: string;
   jersey_number: number;
   position?: string;
+  season_id?: number;
 }) {
   const res = await api.post<Player>("/players", payload);
   return res.data;
@@ -35,9 +39,12 @@ export async function deletePlayer(playerId: number) {
   return res.data;
 }
 
-export async function importPlayersCsv(file: File) {
+export async function importPlayersCsv(file: File, seasonId?: number) {
   const form = new FormData();
   form.append("file", file);
+  if (seasonId != null) {
+    form.append("season_id", String(seasonId));
+  }
   const res = await api.post("/players/import", form, {
     headers: { "Content-Type": "multipart/form-data" },
   });

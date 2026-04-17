@@ -5,6 +5,7 @@ class PlayerCreate(BaseModel):
     last_name: str
     jersey_number: int
     position: str | None = None
+    season_id: int | None = None
 
 class PlayerOut(PlayerCreate):
     id: int

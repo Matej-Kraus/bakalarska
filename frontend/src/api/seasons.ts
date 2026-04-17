@@ -7,3 +7,8 @@ export async function listSeasons() {
   return res.data;
 }
 
+export async function createSeason(payload: { name: string }) {
+  const res = await api.post<Season>("/seasons", payload);
+  return res.data;
+}
+

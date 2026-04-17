@@ -26,31 +26,69 @@ function clamp(v: number, min: number, max: number): number {
 
 function computeAutoRating(stats: PlayerStats): number {
   const positive =
-    stats.goals * 5 +
-    stats.assists * 3 +
-    stats.shots_on_goal * 1.5 +
-    stats.shots_off_goal * 0.5 +
-    stats.passes * 0.05 +
-    stats.won_duels * 0.7 +
-    stats.won_balls * 0.5 +
-    stats.penalties * 2;
+    stats.goals * 6 +
+    stats.assists * 3.8 +
+    stats.shots_on_goal * 2 +
+    stats.shots_off_goal * 0.8 +
+    stats.passes * 0.1 +
+    stats.won_duels * 1 +
+    stats.won_balls * 0.8 +
+    stats.penalties * 2.8;
 
   const negative =
-    stats.errors * 2 +
-    stats.lost_balls * 0.5 +
-    stats.lost_duels * 0.7 +
-    stats.fouls * 0.5 +
-    stats.yellow_cards * 1.5 +
-    stats.red_cards * 4;
+    stats.errors * 1.2 +
+    stats.lost_balls * 0.25 +
+    stats.lost_duels * 0.45 +
+    stats.fouls * 0.3 +
+    stats.yellow_cards * 1 +
+    stats.red_cards * 3;
 
-  const score = positive - negative;
+  // Small activity bonus so active players are not undervalued.
+  const activity =
+    stats.passes +
+    stats.won_duels +
+    stats.lost_duels +
+    stats.shots_on_goal +
+    stats.shots_off_goal +
+    stats.won_balls +
+    stats.lost_balls;
+  const activityBonus = Math.min(1.6, activity * 0.03);
+
+  // Slight uplift to avoid systematically low scores.
+  const score = positive - negative + activityBonus + 0.8;
 
   // Map raw score into 1–10 range (soft caps).
-  const rawMin = -5;
-  const rawMax = 15;
+  const rawMin = -8;
+  const rawMax = 11;
   const norm = (score - rawMin) / (rawMax - rawMin);
   const scaled = 1 + 9 * clamp(norm, 0, 1);
   return Math.round(scaled * 10) / 10; // one decimal
+}
+
+function formatMatchDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("cs-CZ", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function computeFinalRating(autoRating: number, coachRating?: number | null): number {
+  if (
+    coachRating == null ||
+    !Number.isFinite(coachRating) ||
+    coachRating < 1 ||
+    coachRating > 10
+  ) {
+    return autoRating;
+  }
+  // Coach input should influence, not dominate.
+  return Math.round((autoRating * 0.8 + coachRating * 0.2 + Number.EPSILON) * 10) / 10;
 }
 
 type RatingsDraft = Record<number, { rating: string; note: string }>;
@@ -62,9 +100,13 @@ type TimelineBucket = {
   minute: number;
   label: string;
   total: number;
-  passes: number;
-  shots: number;
+  passesSuccess: number;
+  passesUnsuccess: number;
+  shotsOn: number;
+  shotsOff: number;
   duels: number;
+  wonBalls: number;
+  lostBalls: number;
   fouls: number;
   goals: number;
   yellowCards: number;
@@ -167,10 +209,36 @@ export default function MatchEvaluationPage() {
     };
   }, [roster]);
 
-  const events = eventsQuery.data ?? [];
+  const passSummary = useMemo(() => {
+    const events = eventsQuery.data ?? [];
+    let success = 0;
+    let unsuccess = 0;
+    events.forEach((ev) => {
+      if (ev.event_type !== "pass") return;
+      if (ev.delta > 0) success += 1;
+      if (ev.delta < 0) unsuccess += 1;
+    });
+    const total = success + unsuccess;
+    const accuracy = total > 0 ? success / total : null;
+    return { success, unsuccess, total, accuracy };
+  }, [eventsQuery.data]);
+
+  const playerPassMap = useMemo(() => {
+    const map = new Map<number, { success: number; unsuccess: number }>();
+    const events = eventsQuery.data ?? [];
+    events.forEach((ev) => {
+      if (ev.event_type !== "pass") return;
+      const cur = map.get(ev.player_id) ?? { success: 0, unsuccess: 0 };
+      if (ev.delta > 0) cur.success += 1;
+      if (ev.delta < 0) cur.unsuccess += 1;
+      map.set(ev.player_id, cur);
+    });
+    return map;
+  }, [eventsQuery.data]);
 
   const timeline = useMemo(() => {
     const BUCKET_SECONDS = 5 * 60;
+    const events = eventsQuery.data ?? [];
 
     if (!events || events.length === 0) {
       return [] as TimelineBucket[];
@@ -199,9 +267,13 @@ export default function MatchEvaluationPage() {
         minute: startMinute,
         label: `${startMinute}-${endMinute}'`,
         total: 0,
-        passes: 0,
-        shots: 0,
+        passesSuccess: 0,
+        passesUnsuccess: 0,
+        shotsOn: 0,
+        shotsOff: 0,
         duels: 0,
+        wonBalls: 0,
+        lostBalls: 0,
         fouls: 0,
         goals: 0,
         yellowCards: 0,
@@ -210,19 +282,27 @@ export default function MatchEvaluationPage() {
     }
 
     events.forEach((ev) => {
-      if (ev.delta <= 0) return;
       const idx = Math.floor(ev.second_in_match / BUCKET_SECONDS);
       const bucket = buckets[idx];
       if (!bucket) return;
 
+      if (ev.event_type === "pass") {
+        if (ev.delta > 0) {
+          bucket.total += 1;
+          bucket.passesSuccess += 1;
+        } else if (ev.delta < 0) {
+          bucket.passesUnsuccess += 1;
+        }
+        return;
+      }
+      if (ev.delta <= 0) return;
       bucket.total += 1;
       switch (ev.event_type) {
-        case "pass":
-          bucket.passes += 1;
-          break;
         case "shot_on_goal":
+          bucket.shotsOn += 1;
+          break;
         case "shot_off_goal":
-          bucket.shots += 1;
+          bucket.shotsOff += 1;
           break;
         case "won_duel":
         case "lost_duel":
@@ -230,6 +310,12 @@ export default function MatchEvaluationPage() {
           break;
         case "foul":
           bucket.fouls += 1;
+          break;
+        case "won_ball":
+          bucket.wonBalls += 1;
+          break;
+        case "lost_ball":
+          bucket.lostBalls += 1;
           break;
         case "goal":
           bucket.goals += 1;
@@ -246,7 +332,7 @@ export default function MatchEvaluationPage() {
     });
 
     return buckets;
-  }, [events]);
+  }, [eventsQuery.data]);
 
   const topPerformers = useMemo(() => {
     if (roster.length === 0) {
@@ -275,6 +361,57 @@ export default function MatchEvaluationPage() {
     return { mostPasses, mostDuelsWon, mostShots };
   }, [roster]);
 
+  const playerEvaluationRows = useMemo(() => {
+    return playedRoster.map((p) => {
+      const auto = autoRatings[p.player_id] ?? 0;
+      const draft = ratingsDraft[p.player_id] ?? { rating: "", note: "" };
+      const manualNum = Number(draft.rating);
+      const hasManual = Number.isFinite(manualNum) && manualNum >= 1 && manualNum <= 10;
+      const finalRating = computeFinalRating(auto, hasManual ? manualNum : null);
+      const shots = p.stats.shots_on_goal + p.stats.shots_off_goal;
+      const passCounts = playerPassMap.get(p.player_id) ?? {
+        success: p.stats.passes,
+        unsuccess: 0,
+      };
+      const teamShare =
+        teamTotals.teamActionsForShare > 0
+          ? ((p.stats.passes +
+              p.stats.shots_on_goal +
+              p.stats.shots_off_goal +
+              p.stats.won_duels +
+              p.stats.lost_duels +
+              p.stats.won_balls +
+              p.stats.lost_balls +
+              p.stats.fouls) /
+              teamTotals.teamActionsForShare) *
+            100
+          : null;
+      return {
+        player: p,
+        auto,
+        manualNum,
+        hasManual,
+        finalRating,
+        shots,
+        passesSuccess: passCounts.success,
+        passesUnsuccess: passCounts.unsuccess,
+        teamShare,
+      };
+    });
+  }, [playedRoster, autoRatings, ratingsDraft, teamTotals.teamActionsForShare, playerPassMap]);
+
+  const ratingOverview = useMemo(() => {
+    if (playerEvaluationRows.length === 0) {
+      return { ratedCount: 0, avgFinal: null };
+    }
+    const manualRows = playerEvaluationRows.filter((r) => r.hasManual);
+    const finalSum = playerEvaluationRows.reduce((sum, r) => sum + r.finalRating, 0);
+    return {
+      ratedCount: manualRows.length,
+      avgFinal: finalSum / playerEvaluationRows.length,
+    };
+  }, [playerEvaluationRows]);
+
   // Initialize manual ratings draft from existing ratings (only for players who actually played).
   useEffect(() => {
     if (!isValidMatchId) return;
@@ -296,7 +433,9 @@ export default function MatchEvaluationPage() {
     });
     setRatingsDraft(init);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isValidMatchId, playedRoster, ratings]);
+  }, [isValidMatchId, playedRoster, ratings, autoRatings]);
+
+  // Coach rating is optional; no automatic rating write on page open.
 
   if (!isValidMatchId) {
     return (
@@ -319,7 +458,10 @@ export default function MatchEvaluationPage() {
           <div>
             <div className="text-lg font-semibold">Hodnocení zápasu</div>
             <div className="text-sm text-muted-foreground">
-              Zápas ID: {match.id} ještě není ukončen. Nejprve ukonči zápas na obrazovce Live.
+              {match.opponent} • {formatMatchDateTime(match.match_date)} • ID {match.id}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Zápas ještě není ukončen. Nejprve ukonči zápas na obrazovce Live.
             </div>
           </div>
           <Button onClick={() => navigate(`/matches/${match.id}/live`)}>Přejít na Live</Button>
@@ -329,32 +471,95 @@ export default function MatchEvaluationPage() {
   }
 
   return (
-    <div className="w-full min-h-screen px-4 py-4 space-y-6 md:px-6 md:py-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <div className="text-lg font-semibold">Hodnocení zápasu</div>
-          <div className="text-xs text-muted-foreground">
-            Zápas ID: {matchId} • Stav: {match?.status ?? "Načítám…"}
+    <div className="w-full min-h-screen px-4 py-4 space-y-6 md:px-6 md:py-6 max-w-7xl mx-auto">
+      <Card className="rounded-2xl border bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-slate-50">
+        <CardContent className="p-5 md:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-xl font-semibold">Vyhodnocení zápasu</div>
+              <div className="text-sm text-slate-200/90 mt-1">
+                {match?.opponent ?? "Soupeř"} • {formatMatchDateTime(match?.match_date)} • ID {matchId}
+              </div>
+              <div className="text-xs text-slate-300/90 mt-0.5">
+                Stav: {match?.status ?? "Načítám…"}
+              </div>
+            </div>
+            <Button variant="secondary" onClick={() => navigate("/matches")}>
+              Zpět na zápasy
+            </Button>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => navigate("/matches")}>
-            Zpět na zápasy
-          </Button>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {error && (
-        <Card className="w-full rounded-2xl border-destructive">
+        <Card className="w-full rounded-2xl border-destructive bg-destructive/5">
           <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
         </Card>
       )}
 
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="rounded-2xl border-emerald-500/50 bg-emerald-500/10">
+          <CardContent className="p-4">
+            <div className="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              Útok
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-emerald-800 dark:text-emerald-200">
+              {teamTotals.goals} G
+            </div>
+            <div className="text-xs text-emerald-700/90 dark:text-emerald-300/90">
+              {teamTotals.assists} A • {teamTotals.shots_on_goal + teamTotals.shots_off_goal} střel
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-violet-500/50 bg-violet-500/10">
+          <CardContent className="p-4">
+            <div className="text-xs uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              Střelba
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-violet-800 dark:text-violet-200">
+              {teamTotals.shots_on_goal} / {teamTotals.shots_off_goal}
+            </div>
+            <div className="text-xs text-violet-700/90 dark:text-violet-300/90">
+              na bránu / mimo •{" "}
+              {teamTotals.shotAccuracy == null
+                ? "bez střel"
+                : `${Math.round(teamTotals.shotAccuracy * 100)} % přesnost`}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-blue-500/50 bg-blue-500/10">
+          <CardContent className="p-4">
+            <div className="text-xs uppercase tracking-wide text-blue-700 dark:text-blue-300">
+              Přihrávky a souboje
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-blue-800 dark:text-blue-200">
+              {passSummary.success} / {passSummary.unsuccess}
+            </div>
+            <div className="text-xs text-blue-700/90 dark:text-blue-300/90">
+              úspěšné / neúspěšné • {teamTotals.won_duels}/{teamTotals.lost_duels} souboje
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl border-amber-500/50 bg-amber-500/10">
+          <CardContent className="p-4">
+            <div className="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">
+              Disciplína
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-amber-800 dark:text-amber-200">
+              {teamTotals.fouls}
+            </div>
+            <div className="text-xs text-amber-700/90 dark:text-amber-300/90">
+              fauly • {teamTotals.yellow_cards} ŽK • {teamTotals.red_cards} ČK
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="w-full rounded-2xl">
-        <CardHeader>
-          <CardTitle>Průběh zápasu v čase</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle>Časový průběh výkonu</CardTitle>
         </CardHeader>
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-4 space-y-4">
           {eventsQuery.isLoading ? (
             <div className="text-sm text-muted-foreground">Načítám časovou osu…</div>
           ) : timeline.length === 0 ? (
@@ -362,154 +567,62 @@ export default function MatchEvaluationPage() {
               Pro tento zápas zatím nejsou žádné zaznamenané události.
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Celková intenzita (všechny akce)
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-xl border p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Útok: góly a střely
                 </div>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={timeline}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="minute"
-                        tickFormatter={(v) => `${v}'`}
-                        allowDecimals={false}
-                      />
+                      <XAxis dataKey="minute" tickFormatter={(v) => `${v}'`} allowDecimals={false} />
                       <YAxis allowDecimals={false} />
-                      <Tooltip
-                        labelFormatter={(v) => `${v}.–${v + 5}. minuta`}
-                      />
+                      <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
                       <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="total"
-                        name="Akce celkem"
-                        stroke="#0f766e"
-                        strokeWidth={2}
-                        dot={false}
-                      />
+                      <Line type="monotone" dataKey="goals" name="Góly" stroke="#16a34a" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="shotsOn" name="Střely na bránu" stroke="#2563eb" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="shotsOff" name="Střely mimo" stroke="#7c3aed" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Přihrávky a souboje
-                  </div>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={timeline}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="minute"
-                          tickFormatter={(v) => `${v}'`}
-                          allowDecimals={false}
-                        />
-                        <YAxis allowDecimals={false} />
-                        <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="passes"
-                          name="Přihrávky"
-                          stroke="#2563eb"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="duels"
-                          name="Souboje"
-                          stroke="#f97316"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Střely a góly
-                  </div>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={timeline}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis
-                          dataKey="minute"
-                          tickFormatter={(v) => `${v}'`}
-                          allowDecimals={false}
-                        />
-                        <YAxis allowDecimals={false} />
-                        <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="shots"
-                          name="Střely"
-                          stroke="#7c3aed"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="goals"
-                          name="Góly"
-                          stroke="#22c55e"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Fauly a karty
+              <div className="rounded-xl border p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Souboje a disciplína
                 </div>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={timeline}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="minute"
-                        tickFormatter={(v) => `${v}'`}
-                        allowDecimals={false}
-                      />
+                      <XAxis dataKey="minute" tickFormatter={(v) => `${v}'`} allowDecimals={false} />
                       <YAxis allowDecimals={false} />
                       <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
                       <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="fouls"
-                        name="Fauly"
-                        stroke="#64748b"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="yellowCards"
-                        name="Žluté karty"
-                        stroke="#facc15"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="redCards"
-                        name="Červené karty"
-                        stroke="#ef4444"
-                        strokeWidth={2}
-                        dot={false}
-                      />
+                      <Line type="monotone" dataKey="duels" name="Souboje" stroke="#f97316" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="fouls" name="Fauly" stroke="#ef4444" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="yellowCards" name="Žluté karty" stroke="#eab308" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="redCards" name="Červené karty" stroke="#dc2626" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="rounded-xl border p-3 xl:col-span-2">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Přihrávky a ostatní
+                </div>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={timeline}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="minute" tickFormatter={(v) => `${v}'`} allowDecimals={false} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
+                      <Legend />
+                      <Line type="monotone" dataKey="passesSuccess" name="Přihrávky úspěšné" stroke="#2563eb" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="passesUnsuccess" name="Přihrávky neúspěšné" stroke="#7c3aed" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="wonBalls" name="Zisky míče" stroke="#0f766e" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="lostBalls" name="Ztráty míče" stroke="#64748b" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -517,364 +630,178 @@ export default function MatchEvaluationPage() {
             </div>
           )}
           <div className="text-xs text-muted-foreground">
-            Intervaly po 5 minutách, počítají se pouze přidání událostí (+1), ne rušení.
+            Intervaly po 5 minutách; u přihrávek se zobrazují zvlášť úspěšné (+1) a neúspěšné (−1) záznamy.
           </div>
         </CardContent>
       </Card>
 
       <Card className="w-full rounded-2xl">
-        <CardHeader>
-          <CardTitle>Týmové statistiky v zápase</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle>Týmový výkon podle oblastí</CardTitle>
         </CardHeader>
-        <CardContent className="p-4 space-y-3">
-          {roster.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              Zatím nejsou k dispozici žádné statistiky. Ujisti se, že byla nastavena sestava a
-              zaznamenány události.
+        <CardContent className="p-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              Útok
             </div>
-          ) : (
-            <>
-              <div className="rounded-xl border">
-                <div className="border-b px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Přehled týmu
-                </div>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Statistika</TableHead>
-                        <TableHead className="text-right">Hodnota</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <TableRow>
-                        <TableCell>Góly</TableCell>
-                        <TableCell className="text-right">{teamTotals.goals}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Asistence</TableCell>
-                        <TableCell className="text-right">{teamTotals.assists}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Střely (na / mimo)</TableCell>
-                        <TableCell className="text-right">
-                          {teamTotals.shots_on_goal} / {teamTotals.shots_off_goal}
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Přesnost střel</TableCell>
-                        <TableCell className="text-right">
-                          {teamTotals.shotAccuracy == null
-                            ? "—"
-                            : `${Math.round(teamTotals.shotAccuracy * 100)} %`}
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Přihrávky</TableCell>
-                        <TableCell className="text-right">{teamTotals.passes}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Souboje (vyhrané / prohrané)</TableCell>
-                        <TableCell className="text-right">
-                          {teamTotals.won_duels} / {teamTotals.lost_duels}
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Úspěšnost v soubojích</TableCell>
-                        <TableCell className="text-right">
-                          {teamTotals.duelSuccess == null
-                            ? "—"
-                            : `${Math.round(teamTotals.duelSuccess * 100)} %`}
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Zisky / ztráty míče</TableCell>
-                        <TableCell className="text-right">
-                          {teamTotals.won_balls} / {teamTotals.lost_balls}
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Fauly</TableCell>
-                        <TableCell className="text-right">{teamTotals.fouls}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Žluté karty</TableCell>
-                        <TableCell className="text-right">{teamTotals.yellow_cards}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Červené karty</TableCell>
-                        <TableCell className="text-right">{teamTotals.red_cards}</TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>Penalty</TableCell>
-                        <TableCell className="text-right">{teamTotals.penalties}</TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-
-              <div className="grid gap-4 text-sm lg:grid-cols-2">
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Útok
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Góly / asistence</div>
-                      <div className="text-lg font-semibold">
-                        {teamTotals.goals} G / {teamTotals.assists} A
-                      </div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Střely (na / mimo)</div>
-                      <div className="text-lg font-semibold">
-                        {teamTotals.shots_on_goal} / {teamTotals.shots_off_goal}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Přesnost{" "}
-                        {teamTotals.shotAccuracy == null
-                          ? "—"
-                          : `${Math.round(teamTotals.shotAccuracy * 100)} %`}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border p-3 sm:col-span-2">
-                      <div className="text-xs text-muted-foreground">Přihrávky</div>
-                      <div className="text-lg font-semibold">{teamTotals.passes}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Souboje a práce s míčem
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Souboje (+ / −)</div>
-                      <div className="text-lg font-semibold">
-                        {teamTotals.won_duels} / {teamTotals.lost_duels}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        Úspěšnost{" "}
-                        {teamTotals.duelSuccess == null
-                          ? "—"
-                          : `${Math.round(teamTotals.duelSuccess * 100)} %`}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Zisky / ztráty míče</div>
-                      <div className="text-lg font-semibold">
-                        {teamTotals.won_balls} / {teamTotals.lost_balls}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border p-3 sm:col-span-2">
-                      <div className="text-xs text-muted-foreground">Penalty</div>
-                      <div className="text-lg font-semibold">{teamTotals.penalties}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2 lg:col-span-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Disciplína
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Fauly</div>
-                      <div className="text-lg font-semibold">{teamTotals.fouls}</div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Žluté karty</div>
-                      <div className="text-lg font-semibold">{teamTotals.yellow_cards}</div>
-                    </div>
-                    <div className="rounded-xl border p-3">
-                      <div className="text-xs text-muted-foreground">Červené karty</div>
-                      <div className="text-lg font-semibold">{teamTotals.red_cards}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+            <div className="mt-2 text-sm">
+              <div className="flex justify-between"><span>Góly</span><span className="font-semibold">{teamTotals.goals}</span></div>
+              <div className="flex justify-between"><span>Asistence</span><span className="font-semibold">{teamTotals.assists}</span></div>
+              <div className="flex justify-between"><span>Penalty</span><span className="font-semibold">{teamTotals.penalties}</span></div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-violet-500/40 bg-violet-500/5 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              Střelba
+            </div>
+            <div className="mt-2 text-sm">
+              <div className="flex justify-between"><span>Na bránu</span><span className="font-semibold">{teamTotals.shots_on_goal}</span></div>
+              <div className="flex justify-between"><span>Mimo bránu</span><span className="font-semibold">{teamTotals.shots_off_goal}</span></div>
+              <div className="flex justify-between"><span>Přesnost</span><span className="font-semibold">{teamTotals.shotAccuracy == null ? "—" : `${Math.round(teamTotals.shotAccuracy * 100)} %`}</span></div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-500/40 bg-blue-500/5 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+              Přihrávky a souboje
+            </div>
+            <div className="mt-2 text-sm">
+              <div className="flex justify-between"><span>Přihrávky úspěšné</span><span className="font-semibold">{passSummary.success}</span></div>
+              <div className="flex justify-between"><span>Přihrávky neúspěšné</span><span className="font-semibold">{passSummary.unsuccess}</span></div>
+              <div className="flex justify-between"><span>Souboje +/−</span><span className="font-semibold">{teamTotals.won_duels} / {teamTotals.lost_duels}</span></div>
+              <div className="flex justify-between"><span>Úspěšnost přihrávek</span><span className="font-semibold">{passSummary.accuracy == null ? "—" : `${Math.round(passSummary.accuracy * 100)} %`}</span></div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+              Disciplína a míč
+            </div>
+            <div className="mt-2 text-sm">
+              <div className="flex justify-between"><span>Fauly</span><span className="font-semibold">{teamTotals.fouls}</span></div>
+              <div className="flex justify-between"><span>Karty (ŽK/ČK)</span><span className="font-semibold">{teamTotals.yellow_cards} / {teamTotals.red_cards}</span></div>
+              <div className="flex justify-between"><span>Zisky / ztráty</span><span className="font-semibold">{teamTotals.won_balls} / {teamTotals.lost_balls}</span></div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       <Card className="w-full rounded-2xl">
-        <CardHeader>
-          <CardTitle>Souhrn výkonu hráčů</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle>Výkon hráčů (rychlý přehled)</CardTitle>
         </CardHeader>
-        <CardContent className="p-4 space-y-3">
-          {playedRoster.length === 0 ? (
+        <CardContent className="p-4 space-y-4">
+          {playerEvaluationRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               Zatím nejsou k dispozici žádné statistiky. Ujisti se, že byla nastavena sestava a
               zaznamenány události.
             </div>
           ) : (
             <>
-              <div className="rounded-xl border">
-                <div className="border-b px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Statistiky hráčů
-                </div>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Hráč</TableHead>
-                        <TableHead className="text-right">G</TableHead>
-                        <TableHead className="text-right">A</TableHead>
-                        <TableHead className="text-right">Střely</TableHead>
-                        <TableHead className="text-right">Přihrávky</TableHead>
-                        <TableHead className="text-right">Souboje (+/−)</TableHead>
-                        <TableHead className="text-right">Zisky/Ztráty</TableHead>
-                        <TableHead className="text-right">Fauly</TableHead>
-                        <TableHead className="text-right">Karty (ŽK/ČK)</TableHead>
-                        <TableHead className="text-right">Podíl na akcích</TableHead>
-                        <TableHead className="text-right">Auto rating</TableHead>
-                        <TableHead className="text-right">Kombinované</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {playedRoster.map((p) => {
-                        const auto = autoRatings[p.player_id] ?? 0;
-                        const v = ratingsDraft[p.player_id] ?? { rating: "", note: "" };
-                        const manualNum = Number(v.rating);
-                        const hasManual =
-                          Number.isFinite(manualNum) && manualNum >= 1 && manualNum <= 10;
-                        const combined = hasManual
-                          ? Math.round(((auto * 0.6 + manualNum * 0.4) + Number.EPSILON) * 10) /
-                            10
-                          : auto;
-
-                        const shots = p.stats.shots_on_goal + p.stats.shots_off_goal;
-                        const teamShare =
-                          teamTotals.teamActionsForShare > 0
-                            ? ((p.stats.passes +
-                                p.stats.shots_on_goal +
-                                p.stats.shots_off_goal +
-                                p.stats.won_duels +
-                                p.stats.lost_duels +
-                                p.stats.won_balls +
-                                p.stats.lost_balls +
-                                p.stats.fouls) /
-                                teamTotals.teamActionsForShare) *
-                              100
-                            : null;
-
-                        return (
-                          <TableRow key={p.player_id}>
-                            <TableCell>
-                              <div className="flex flex-col">
-                                <span className="font-medium">
-                                  #{p.jersey_number_match} {p.first_name} {p.last_name}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {p.role === "starter" ? "Základní sestava" : "Střídající"}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">{p.stats.goals}</TableCell>
-                            <TableCell className="text-right">{p.stats.assists}</TableCell>
-                            <TableCell className="text-right">{shots}</TableCell>
-                            <TableCell className="text-right">{p.stats.passes}</TableCell>
-                            <TableCell className="text-right">
-                              {p.stats.won_duels} / {p.stats.lost_duels}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {p.stats.won_balls} / {p.stats.lost_balls}
-                            </TableCell>
-                            <TableCell className="text-right">{p.stats.fouls}</TableCell>
-                            <TableCell className="text-right">
-                              {p.stats.yellow_cards} / {p.stats.red_cards}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {teamShare == null ? "—" : `${teamShare.toFixed(1)} %`}
-                            </TableCell>
-                            <TableCell className="text-right">{auto.toFixed(1)}</TableCell>
-                            <TableCell className="text-right">{combined.toFixed(1)}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-
               <div className="grid gap-3 md:grid-cols-3">
                 {topPerformers.mostPasses && (
-                  <div className="rounded-xl border p-3 text-sm">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Nejvíce přihrávek
-                    </div>
-                    <div className="mt-1 font-medium">
-                      #{topPerformers.mostPasses.jersey_number_match}{" "}
-                      {topPerformers.mostPasses.first_name}{" "}
-                      {topPerformers.mostPasses.last_name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {topPerformers.mostPasses.stats.passes} přihrávek
-                    </div>
+                  <div className="rounded-xl border border-blue-500/40 bg-blue-500/5 p-3 text-sm">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Nejvíce přihrávek</div>
+                    <div className="mt-1 font-medium">#{topPerformers.mostPasses.jersey_number_match} {topPerformers.mostPasses.first_name} {topPerformers.mostPasses.last_name}</div>
+                    <div className="text-xs text-muted-foreground">{topPerformers.mostPasses.stats.passes} přihrávek</div>
                   </div>
                 )}
                 {topPerformers.mostDuelsWon && (
-                  <div className="rounded-xl border p-3 text-sm">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Nejvíce vyhraných soubojů
-                    </div>
-                    <div className="mt-1 font-medium">
-                      #{topPerformers.mostDuelsWon.jersey_number_match}{" "}
-                      {topPerformers.mostDuelsWon.first_name}{" "}
-                      {topPerformers.mostDuelsWon.last_name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {topPerformers.mostDuelsWon.stats.won_duels} vyhraných soubojů
-                    </div>
+                  <div className="rounded-xl border border-orange-500/40 bg-orange-500/5 p-3 text-sm">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-orange-700 dark:text-orange-300">Nejvíce vyhraných soubojů</div>
+                    <div className="mt-1 font-medium">#{topPerformers.mostDuelsWon.jersey_number_match} {topPerformers.mostDuelsWon.first_name} {topPerformers.mostDuelsWon.last_name}</div>
+                    <div className="text-xs text-muted-foreground">{topPerformers.mostDuelsWon.stats.won_duels} vyhraných soubojů</div>
                   </div>
                 )}
                 {topPerformers.mostShots && (
-                  <div className="rounded-xl border p-3 text-sm">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Nejvíce střel
-                    </div>
-                    <div className="mt-1 font-medium">
-                      #{topPerformers.mostShots.jersey_number_match}{" "}
-                      {topPerformers.mostShots.first_name}{" "}
-                      {topPerformers.mostShots.last_name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {topPerformers.mostShots.stats.shots_on_goal +
-                        topPerformers.mostShots.stats.shots_off_goal}{" "}
-                      střel
-                    </div>
+                  <div className="rounded-xl border border-violet-500/40 bg-violet-500/5 p-3 text-sm">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Nejvíce střel</div>
+                    <div className="mt-1 font-medium">#{topPerformers.mostShots.jersey_number_match} {topPerformers.mostShots.first_name} {topPerformers.mostShots.last_name}</div>
+                    <div className="text-xs text-muted-foreground">{topPerformers.mostShots.stats.shots_on_goal + topPerformers.mostShots.stats.shots_off_goal} střel</div>
                   </div>
                 )}
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Hráč</TableHead>
+                      <TableHead className="text-right">Útok (G/A/Stř.)</TableHead>
+                      <TableHead className="text-right">Přihrávky (+/−)</TableHead>
+                      <TableHead className="text-right">Souboje (+/−)</TableHead>
+                      <TableHead className="text-right">Karty (ŽK/ČK)</TableHead>
+                      <TableHead className="text-right">Podíl na akcích</TableHead>
+                      <TableHead className="text-right">Finální hodnocení</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {playerEvaluationRows.map((r) => (
+                      <TableRow key={r.player.player_id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              #{r.player.jersey_number_match} {r.player.first_name} {r.player.last_name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {r.player.role === "starter" ? "Základní sestava" : "Střídající"}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.player.stats.goals}/{r.player.stats.assists}/{r.shots}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.passesSuccess} / {r.passesUnsuccess}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.player.stats.won_duels}/{r.player.stats.lost_duels}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.player.stats.yellow_cards}/{r.player.stats.red_cards}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.teamShare == null ? "—" : `${r.teamShare.toFixed(1)} %`}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">{r.finalRating.toFixed(1)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </>
           )}
         </CardContent>
       </Card>
+
       {isCoach && playedRoster.length > 0 && (
-        <Card className="w-full rounded-2xl">
-          <CardHeader>
-            <CardTitle>Hodnocení trenéra (po zápase)</CardTitle>
+        <Card id="coach-ratings" className="w-full rounded-2xl border-sky-500/40">
+          <CardHeader className="pb-3">
+            <CardTitle>Hodnocení trenéra</CardTitle>
           </CardHeader>
           <CardContent className="p-4 space-y-4">
-            <div className="text-xs text-muted-foreground">
-              Zadej hodnocení trenéra pro každého hráče (1–10). Kombinované hodnocení vychází z
-              automatického modelu a ručního ratingu.
-            </div>
-            <div className="rounded-xl border">
-              <div className="border-b px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Hodnocení hráčů
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border bg-sky-500/10 p-3">
+                <div className="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">Hodnoceno</div>
+                <div className="text-xl font-semibold">{ratingOverview.ratedCount}/{playerEvaluationRows.length}</div>
               </div>
+              <div className="rounded-xl border bg-indigo-500/10 p-3">
+                <div className="text-xs uppercase tracking-wide text-indigo-700 dark:text-indigo-300">Průměr finální</div>
+                <div className="text-xl font-semibold">{ratingOverview.avgFinal == null ? "—" : ratingOverview.avgFinal.toFixed(2)}</div>
+              </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground">
+              Hodnocení trenéra je volitelné. Pokud je vyplněné, finální hodnocení upraví jen
+              částečně (20 % trenér, 80 % systém).
+            </div>
+
+            <div className="rounded-xl border">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Hráč</TableHead>
-                      <TableHead className="text-right">Auto rating</TableHead>
-                      <TableHead className="text-right">Hodnocení trenéra</TableHead>
-                      <TableHead className="text-right">Kombinované</TableHead>
+                      <TableHead className="text-right">Finální</TableHead>
+                      <TableHead className="text-right">Trenér</TableHead>
                       <TableHead>Poznámka trenéra</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -885,9 +812,7 @@ export default function MatchEvaluationPage() {
                       const manualNum = Number(v.rating);
                       const hasManual =
                         Number.isFinite(manualNum) && manualNum >= 1 && manualNum <= 10;
-                      const combined = hasManual
-                        ? Math.round(((auto * 0.6 + manualNum * 0.4) + Number.EPSILON) * 10) / 10
-                        : auto;
+                      const final = computeFinalRating(auto, hasManual ? manualNum : null);
 
                       return (
                         <TableRow key={p.player_id}>
@@ -901,7 +826,7 @@ export default function MatchEvaluationPage() {
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">{auto.toFixed(1)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{final.toFixed(1)}</TableCell>
                           <TableCell className="text-right">
                             <Input
                               className="w-20 text-right"
@@ -916,10 +841,9 @@ export default function MatchEvaluationPage() {
                               }
                             />
                           </TableCell>
-                          <TableCell className="text-right">{combined.toFixed(1)}</TableCell>
                           <TableCell>
                             <Input
-                              className="w-40 md:w-64"
+                              className="w-44 md:w-72"
                               placeholder="Krátká poznámka"
                               value={v.note}
                               onChange={(e) =>

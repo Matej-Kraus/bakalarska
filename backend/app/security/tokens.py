@@ -1,12 +1,13 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from jose import JWTError, jwt
 
 from app.core.settings import settings
+from app.util.time import utcnow
 
 
 def create_access_token(*, user_id: int, club_id: int, role: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     exp = now + timedelta(minutes=settings.access_token_exp_minutes)
     payload = {
         "sub": str(user_id),

@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
 from app.api.routes.auth import router as auth_router
+from app.api.routes.club import router as club_router
+from app.exceptions import AppError
 from app.api.routes.events import router as events_router
 from app.api.routes.export import router as export_router
 from app.api.routes.ratings import router as ratings_router
@@ -14,6 +18,13 @@ from app.api.routes.reports import router as reports_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Trainer App API", version="0.1.0")
+
+
+@app.exception_handler(AppError)
+def app_error_handler(request: Request, exc: AppError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -27,6 +38,7 @@ app.add_middleware(
 app.include_router(seasons_router)
 app.include_router(matches_router)
 app.include_router(auth_router)
+app.include_router(club_router)
 app.include_router(events_router)
 app.include_router(lineup_router)
 app.include_router(stats_router)

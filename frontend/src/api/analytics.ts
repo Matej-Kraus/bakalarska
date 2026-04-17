@@ -10,6 +10,10 @@ export type PlayerPerformanceRow = {
   stats: { match_id: number; player_id: number } & PlayerStats;
   rating?: number | null;
   note?: string | null;
+  /** Pass events with +1 (recorded) */
+  passes_success: number;
+  /** Pass events with −1 (correction / removed) */
+  passes_unsuccess: number;
 };
 
 export type LeaderboardRow = {
@@ -35,6 +39,33 @@ export async function playerPerformance(playerId: number, seasonId?: number) {
 
 export async function seasonLeaderboards(seasonId: number) {
   const res = await api.get<LeaderboardRow[]>(`/seasons/${seasonId}/leaderboards`);
+  return res.data;
+}
+
+export type TeamMatchBreakdownRow = {
+  match_id: number;
+  match_date: string;
+  opponent: string;
+  competition?: string | null;
+  status: string;
+  goals: number;
+  assists: number;
+  passes: number;
+  passes_success: number;
+  passes_unsuccess: number;
+  shots_on_goal: number;
+  shots_off_goal: number;
+  won_duels: number;
+  lost_duels: number;
+  fouls: number;
+  yellow_cards: number;
+  red_cards: number;
+};
+
+export async function teamMatchesBreakdown(seasonId: number) {
+  const res = await api.get<TeamMatchBreakdownRow[]>(
+    `/seasons/${seasonId}/team-matches-breakdown`
+  );
   return res.data;
 }
 

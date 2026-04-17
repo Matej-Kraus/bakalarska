@@ -30,6 +30,22 @@ export type SubstitutionDto = {
   second_in_match: number;
 };
 
+export async function listMatches(seasonId?: number) {
+  const params = seasonId != null ? { season_id: seasonId } : undefined;
+  const res = await api.get<MatchDto[]>("/matches", { params });
+  return res.data;
+}
+
+export async function createMatch(payload: {
+  season_id: number;
+  opponent: string;
+  competition: string;
+  match_date: string;
+}) {
+  const res = await api.post<MatchDto>("/matches", payload);
+  return res.data;
+}
+
 export async function getMatch(matchId: number) {
   const res = await api.get<MatchDto>(`/matches/${matchId}`);
   return res.data;
@@ -53,6 +69,10 @@ export async function startSecondHalf(matchId: number) {
 export async function finishMatch(matchId: number) {
   const res = await api.post<MatchDto>(`/matches/${matchId}/finish`);
   return res.data;
+}
+
+export async function deleteMatch(matchId: number) {
+  await api.delete(`/matches/${matchId}`);
 }
 
 export async function listSubstitutions(matchId: number) {

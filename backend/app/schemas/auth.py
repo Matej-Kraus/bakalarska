@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+UserRoleLiteral = Literal["coach"]
 
 
 class LoginRequest(BaseModel):
@@ -6,11 +10,23 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    club_name: str
+    email: str
+    password: str
+
+
+class RegisterOut(BaseModel):
+    ok: bool = True
+    message: str
+
+
 class UserOut(BaseModel):
     id: int
     club_id: int
     email: str
-    role: str
+    role: UserRoleLiteral
+    email_verified: bool
 
     class Config:
         from_attributes = True
@@ -20,4 +36,3 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
-

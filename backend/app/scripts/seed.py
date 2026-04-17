@@ -56,14 +56,10 @@ def seed_club_and_users(db: Session) -> Club:
         email="coach@demo.local",
         password_hash=hash_password("coach"),
         role="coach",
+        email_verified=True,
+        email_verification_token=None,
     )
-    assistant = User(
-        club_id=club.id,
-        email="assistant@demo.local",
-        password_hash=hash_password("assistant"),
-        role="assistant",
-    )
-    db.add_all([coach, assistant])
+    db.add(coach)
     db.commit()
     return club
 
@@ -172,7 +168,6 @@ def main() -> None:
         print(f"Club:   {club.id} ({club.name})")
         print("Auth:")
         print("  coach@demo.local / coach")
-        print("  assistant@demo.local / assistant")
         print(f"Season: {season.id} ({season.name})")
         print(f"Match:  {match.id} vs {match.opponent} ({match.status})")
         print("Players:", len(players))

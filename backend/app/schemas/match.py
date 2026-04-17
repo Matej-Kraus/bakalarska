@@ -1,5 +1,9 @@
 from datetime import datetime, timezone
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_serializer
+
+MatchStatusLiteral = Literal["planned", "live_half_1", "half_time", "live_half_2", "finished"]
 
 
 class MatchCreate(BaseModel):
@@ -7,7 +11,7 @@ class MatchCreate(BaseModel):
     opponent: str
     competition: str | None = None
     match_date: datetime
-    status: str = Field(default="planned")
+    status: MatchStatusLiteral = Field(default="planned")
 
 
 class MatchOut(BaseModel):

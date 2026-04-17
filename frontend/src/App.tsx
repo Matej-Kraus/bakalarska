@@ -7,6 +7,7 @@ import LineupPage from "./pages/LineupPage";
 import LiveMatchPage from "./pages/LiveMatchPage";
 import MatchEvaluationPage from "./pages/MatchEvaluationPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import ClubSettingsPage from "./pages/ClubSettingsPage";
 import LoginPage from "./pages/LoginPage";
 import { useAuth } from "./auth/AuthContext";
 
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/matches/:matchId/live" element={<LiveMatchPage />} />
         <Route path="/matches/:matchId/evaluation" element={<MatchEvaluationPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/club" element={<ClubSettingsPage />} />
 
         {/* jen test route */}
         <Route path="/test" element={<TailwindTest />} />

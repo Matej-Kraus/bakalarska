@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -11,6 +11,8 @@ import {
   type Player,
 } from "../api/players";
 import { useAuth } from "@/auth/AuthContext";
+import { listSeasons } from "@/api/seasons";
+import { getActiveSeasonId, setActiveSeasonId } from "@/state/season";
 import { downloadBlob } from "@/utils/download";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,26 +24,42 @@ export default function PlayersPage() {
   const qc = useQueryClient();
   const auth = useAuth();
   const isCoach = auth.user?.role === "coach";
+  const [seasonId, setSeasonId] = useState<number>(() => getActiveSeasonId() ?? 1);
+
+  const seasonsQuery = useQuery({
+    queryKey: ["seasons"],
+    queryFn: listSeasons,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!seasonsQuery.data || seasonsQuery.data.length === 0) return;
+    if (seasonsQuery.data.some((s) => s.id === seasonId)) return;
+    const sid = seasonsQuery.data[0].id;
+    setSeasonId(sid);
+    setActiveSeasonId(sid);
+  }, [seasonsQuery.data, seasonId]);
 
   const playersQuery = useQuery({
-    queryKey: ["players"],
-    queryFn: listPlayers,
+    queryKey: ["players", seasonId],
+    queryFn: () => listPlayers(seasonId),
     refetchOnWindowFocus: false,
+    enabled: Number.isFinite(seasonId) && seasonId > 0,
   });
 
   const createMutation = useMutation({
     mutationFn: createPlayer,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", seasonId] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deletePlayer,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", seasonId] }),
   });
 
   const importMutation = useMutation({
-    mutationFn: importPlayersCsv,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players"] }),
+    mutationFn: (file: File) => importPlayersCsv(file, seasonId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", seasonId] }),
   });
 
   const [firstName, setFirstName] = useState("");
@@ -67,6 +85,25 @@ export default function PlayersPage() {
         </CardHeader>
 
         <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Sezóna</div>
+            <select
+              className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm md:w-80"
+              value={seasonId}
+              onChange={(e) => {
+                const sid = Number(e.target.value);
+                setSeasonId(sid);
+                setActiveSeasonId(sid);
+              }}
+            >
+              {(seasonsQuery.data ?? []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} (id {s.id})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Import hráčů (CSV)</div>
@@ -152,6 +189,7 @@ export default function PlayersPage() {
                     last_name: lastName.trim(),
                     jersey_number: jerseyNumber,
                     position: position.trim() || undefined,
+                    season_id: seasonId,
                   })
                 }
               >

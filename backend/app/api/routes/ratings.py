@@ -3,9 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_role
 from app.models.match import Match
-from app.models.match_lineup import MatchLineup
 from app.models.match_player_rating import MatchPlayerRating
-from app.models.player import Player
 from app.models.user import User
 from app.schemas.rating import RatingOut, RatingsSaveRequest
 
@@ -41,50 +39,11 @@ def save_ratings(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("coach")),
 ):
-    match = (
-        db.query(Match)
-        .filter(Match.id == match_id, Match.club_id == current_user.club_id)
-        .first()
-    )
-    if not match:
-        raise HTTPException(status_code=404, detail="Match not found")
-    if match.status != "finished":
-        raise HTTPException(
-            status_code=400,
-            detail="Ratings can only be saved after the match is finished",
-        )
+    from app.exceptions import AppError
+    from app.services.ratings_service import save_ratings as ratings_save
 
-    # Validate: each player must be nominated in lineup for this match and belong to club.
-    nominated_ids = {
-        pid
-        for (pid,) in (
-            db.query(MatchLineup.player_id)
-            .join(Player, Player.id == MatchLineup.player_id)
-            .filter(MatchLineup.match_id == match_id, Player.club_id == current_user.club_id)
-            .all()
-        )
-    }
-    missing = [i.player_id for i in payload.items if i.player_id not in nominated_ids]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"Players not in lineup: {missing}")
-
-    # Replace existing ratings for match (MVP simplicity).
-    db.query(MatchPlayerRating).filter(MatchPlayerRating.match_id == match_id).delete()
-
-    rows: list[MatchPlayerRating] = []
-    for item in payload.items:
-        r = MatchPlayerRating(
-            match_id=match_id,
-            player_id=item.player_id,
-            user_id=current_user.id,
-            rating=item.rating,
-            note=item.note,
-        )
-        db.add(r)
-        rows.append(r)
-
-    db.commit()
-    for r in rows:
-        db.refresh(r)
-    return rows
+    try:
+        return ratings_save(db, match_id, current_user, payload)
+    except AppError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
 

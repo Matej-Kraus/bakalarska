@@ -1,24 +1,21 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-import { exportMatchEventsCsv } from "@/api/matches";
+import {
+  exportMatchEventsCsv,
+  listMatches,
+  createMatch,
+  deleteMatch,
+} from "@/api/matches";
+import { listSeasons } from "@/api/seasons";
+import { getActiveSeasonId, onActiveSeasonChange, setActiveSeasonId } from "@/state/season";
 import { downloadBlob } from "@/utils/download";
-
-type Match = {
-  id: number;
-  opponent: string;
-  competition: string;
-  match_date: string;
-  status: string;
-  season_id: number;
-};
 
 function getErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -34,7 +31,23 @@ function getErrorMessage(err: unknown): string {
   return "Unknown error";
 }
 
+function getNowLocalDateTimeInputValue(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toIsoDateTime(value: string): string {
+  // datetime-local input provides "YYYY-MM-DDTHH:mm"; backend accepts ISO-like datetime.
+  return value.length === 16 ? `${value}:00` : value;
+}
+
 export default function MatchesPage() {
+  const qc = useQueryClient();
   const navigate = useNavigate();
   const auth = useAuth();
   const isCoach = auth.user?.role === "coach";
@@ -42,43 +55,68 @@ export default function MatchesPage() {
 
   const [opponent, setOpponent] = useState("Sparta");
   const [competition, setCompetition] = useState("Liga");
-  const [matchDate, setMatchDate] = useState("2026-02-23T18:00:00");
-  const [seasonId, setSeasonId] = useState<number>(1);
+  const [matchDate, setMatchDate] = useState(getNowLocalDateTimeInputValue);
+  const [seasonId, setSeasonId] = useState<number>(() => getActiveSeasonId() ?? 1);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const { data: matches, isLoading } = useQuery({
-    queryKey: ["matches"],
-    queryFn: async () => {
-      const res = await api.get("/matches");
-      return res.data as Match[];
+  const seasonsQuery = useQuery({
+    queryKey: ["seasons"],
+    queryFn: listSeasons,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    const unsub = onActiveSeasonChange((sid) => setSeasonId(sid));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (!seasonsQuery.data || seasonsQuery.data.length === 0) return;
+    const active = getActiveSeasonId();
+    if (active && seasonsQuery.data.some((s) => s.id === active)) {
+      setSeasonId(active);
+      return;
+    }
+    const fallback = seasonsQuery.data[0].id;
+    setSeasonId(fallback);
+    setActiveSeasonId(fallback);
+  }, [seasonsQuery.data]);
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteMatch,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["matches", seasonId] });
+      void qc.invalidateQueries({ queryKey: ["team-stats"] });
+      void qc.invalidateQueries({ queryKey: ["team-matches-breakdown"] });
+      void qc.invalidateQueries({ queryKey: ["leaderboards"] });
     },
+  });
+
+  const { data: matches, isLoading } = useQuery({
+    queryKey: ["matches", seasonId],
+    queryFn: () => listMatches(seasonId),
   });
 
   const sorted = useMemo(() => {
     return [...(matches ?? [])].sort((a, b) => b.id - a.id);
   }, [matches]);
 
-  async function createMatch() {
+  async function handleCreateMatch() {
     try {
       setErr(null);
       setCreating(true);
-
-      // Backend musí mít POST /matches (ty už ho zjevně máš podle Swaggeru).
-      const res = await api.post("/matches", {
+      const created = await createMatch({
         season_id: seasonId,
         opponent,
         competition,
-        match_date: matchDate,
+        match_date: toIsoDateTime(matchDate),
       });
-
-      const newId = Number((res.data as { id?: unknown }).id);
-
+      const newId = created.id;
       if (!Number.isFinite(newId)) {
-        setErr(`Backend nevrátil id. Odpověď: ${JSON.stringify(res.data)}`);
+        setErr(`Backend nevrátil id. Odpověď: ${JSON.stringify(created)}`);
         return;
       }
-
       navigate(`/matches/${newId}/lineup`);
     } catch (e: unknown) {
       setErr(getErrorMessage(e));
@@ -113,22 +151,36 @@ export default function MatchesPage() {
             </div>
 
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Datum/čas (ISO)</div>
-              <Input value={matchDate} onChange={(e) => setMatchDate(e.target.value)} />
+              <div className="text-xs text-muted-foreground">Datum/čas</div>
+              <Input
+                type="datetime-local"
+                value={matchDate}
+                onChange={(e) => setMatchDate(e.target.value)}
+              />
             </div>
 
             <div className="space-y-1">
-              <div className="text-xs text-muted-foreground">Sezóna ID</div>
-              <Input
-                value={String(seasonId)}
-                inputMode="numeric"
-                onChange={(e) => setSeasonId(Number(e.target.value || 1))}
-              />
+              <div className="text-xs text-muted-foreground">Sezóna</div>
+              <select
+                className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm"
+                value={seasonId}
+                onChange={(e) => {
+                  const sid = Number(e.target.value || 1);
+                  setSeasonId(sid);
+                  setActiveSeasonId(sid);
+                }}
+              >
+                {(seasonsQuery.data ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} (id {s.id})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={createMatch} disabled={!isCoach || creating}>
+            <Button onClick={handleCreateMatch} disabled={!isCoach || creating}>
               Vytvořit zápas → Sestava
             </Button>
           </div>
@@ -173,7 +225,7 @@ export default function MatchesPage() {
                       )
                     }
                   >
-                    {m.status === "finished" ? "Report" : "Live"}
+                    {m.status === "finished" ? "Vyhodnocení" : "Live"}
                   </Button>
                   {isCoach && (
                     <Button
@@ -184,6 +236,26 @@ export default function MatchesPage() {
                       }}
                     >
                       Export events
+                    </Button>
+                  )}
+                  {isCoach && (
+                    <Button
+                      variant="destructive"
+                      disabled={deleteMutation.isPending}
+                      onClick={async () => {
+                        const ok = window.confirm(
+                          `Opravdu smazat zápas #${m.id} vs ${m.opponent}? Tato akce odstraní i události, statistiky, sestavu, střídání a hodnocení.`,
+                        );
+                        if (!ok) return;
+                        try {
+                          setErr(null);
+                          await deleteMutation.mutateAsync(m.id);
+                        } catch (e: unknown) {
+                          setErr(getErrorMessage(e));
+                        }
+                      }}
+                    >
+                      Smazat
                     </Button>
                   )}
                 </div>

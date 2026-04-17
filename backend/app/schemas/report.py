@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StatsSumOut(BaseModel):
@@ -18,3 +18,20 @@ class StatsSumOut(BaseModel):
     yellow_cards: int
     red_cards: int
     penalties: int
+
+
+class TeamSeasonStatsOut(StatsSumOut):
+    """Team-wide season aggregates; `games` = distinct matches that have stat rows."""
+
+    season_matches_total: int = Field(
+        ...,
+        description="Total matches in the season (any status), from the matches table.",
+    )
+    passes_success: int = Field(
+        ...,
+        description="Pass events with delta=+1 in this season.",
+    )
+    passes_unsuccess: int = Field(
+        ...,
+        description="Pass events with delta=-1 in this season.",
+    )
