@@ -45,7 +45,9 @@ export default function LiveMatchPage() {
     halfTimeMutation,
     startSecondHalfMutation,
     finishMutation,
-    addEventMutation,
+    enqueueMatchEvent,
+    pendingEventCount,
+    eventSyncError,
     saveRatingsMutation,
     substitutions,
     createSubstitutionMutation,
@@ -143,6 +145,12 @@ export default function LiveMatchPage() {
     }
   }, [isValidMatchId, match?.status, matchId, navigate]);
 
+  useEffect(() => {
+    if (eventSyncError) {
+      setError(eventSyncError);
+    }
+  }, [eventSyncError]);
+
   if (!isValidMatchId) {
     return (
       <div className="p-6 space-y-3">
@@ -183,6 +191,13 @@ export default function LiveMatchPage() {
           <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
         </Card>
       )}
+      {pendingEventCount > 0 && (
+        <Card className="w-full rounded-2xl border-blue-500/40 bg-blue-500/10">
+          <CardContent className="p-3 text-sm text-blue-900 dark:text-blue-100">
+            Synchronizuji události… Ve frontě: {pendingEventCount}
+          </CardContent>
+        </Card>
+      )}
 
       {!canRecord && match?.status === "planned" && (
         <Card className="w-full rounded-2xl border-amber-500/50 bg-amber-500/10">
@@ -195,22 +210,18 @@ export default function LiveMatchPage() {
       <RosterEventsCard
         roster={roster}
         isCoach={canRecord}
-        isLoading={rosterQuery.isLoading || addEventMutation.isPending}
+        isLoading={rosterQuery.isLoading}
         canRecordForPlayer={(row) => row.on_field === true}
         onDelta={async (playerId, type, delta) => {
           setError(null);
           const clickTimeMs = Date.now();
-          try {
-            await addEventMutation.mutateAsync({
-              playerId,
-              delta,
-              eventType: type,
-              half,
-              secondInMatch: getMatchSecondsAt(clickTimeMs),
-            });
-          } catch (e: unknown) {
-            setError(getErrorMessage(e));
-          }
+          enqueueMatchEvent({
+            playerId,
+            delta,
+            eventType: type,
+            half,
+            secondInMatch: getMatchSecondsAt(clickTimeMs),
+          });
         }}
       />
 

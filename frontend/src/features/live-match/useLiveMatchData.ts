@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 
@@ -20,6 +20,23 @@ import {
 import type { MatchEvent, RosterWithStatsRow } from "@/api/types";
 import { listRatings, saveRatings } from "@/api/ratings";
 
+const EVENT_TO_STATS_KEY = {
+  goal: "goals",
+  assist: "assists",
+  error: "errors",
+  won_ball: "won_balls",
+  lost_ball: "lost_balls",
+  foul: "fouls",
+  pass: "passes",
+  won_duel: "won_duels",
+  lost_duel: "lost_duels",
+  shot_on_goal: "shots_on_goal",
+  shot_off_goal: "shots_off_goal",
+  yellow_card: "yellow_cards",
+  red_card: "red_cards",
+  penalty: "penalties",
+} as const;
+
 export function getErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const data = err.response?.data;
@@ -36,6 +53,18 @@ export function getErrorMessage(err: unknown): string {
 
 export function useLiveMatchData(matchId: number, isValidMatchId: boolean) {
   const qc = useQueryClient();
+  const [pendingEventCount, setPendingEventCount] = useState(0);
+  const [eventSyncError, setEventSyncError] = useState<string | null>(null);
+  const eventQueueRef = useRef<
+    Array<{
+      playerId: number;
+      delta: 1 | -1;
+      eventType: EventType;
+      half: 1 | 2;
+      secondInMatch: number;
+    }>
+  >([]);
+  const isProcessingQueueRef = useRef(false);
 
   const matchQuery = useQuery({
     queryKey: ["match", matchId],
@@ -115,9 +144,61 @@ export function useLiveMatchData(matchId: number, isValidMatchId: boolean) {
         half: p.half,
         secondInMatch: p.secondInMatch,
       }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["roster-with-stats", matchId] });
-      await qc.invalidateQueries({ queryKey: ["events", matchId] });
+    onMutate: async (p) => {
+      await qc.cancelQueries({ queryKey: ["roster-with-stats", matchId] });
+      await qc.cancelQueries({ queryKey: ["events", matchId] });
+
+      const previousRoster = qc.getQueryData<RosterWithStatsRow[]>(["roster-with-stats", matchId]);
+      const previousEvents = qc.getQueryData<MatchEvent[]>(["events", matchId]);
+
+      const statKey = EVENT_TO_STATS_KEY[p.eventType];
+      if (previousRoster && statKey) {
+        qc.setQueryData<RosterWithStatsRow[]>(["roster-with-stats", matchId], (old) =>
+          (old ?? []).map((row) => {
+            if (row.player_id !== p.playerId) return row;
+            const current = row.stats[statKey] ?? 0;
+            const next = Math.max(0, current + p.delta);
+            return {
+              ...row,
+              stats: {
+                ...row.stats,
+                [statKey]: next,
+              },
+            };
+          }),
+        );
+      }
+
+      const optimisticId = -Date.now();
+      const optimisticEvent: MatchEvent = {
+        id: optimisticId,
+        match_id: matchId,
+        player_id: p.playerId,
+        event_type: p.eventType,
+        delta: p.delta,
+        half: p.half,
+        second_in_match: p.secondInMatch,
+      };
+      qc.setQueryData<MatchEvent[]>(["events", matchId], (old) => [...(old ?? []), optimisticEvent]);
+
+      return { previousRoster, previousEvents, optimisticId };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (!ctx) return;
+      if (ctx.previousRoster) {
+        qc.setQueryData(["roster-with-stats", matchId], ctx.previousRoster);
+      }
+      if (ctx.previousEvents) {
+        qc.setQueryData(["events", matchId], ctx.previousEvents);
+      }
+    },
+    onSuccess: (serverEvent, _vars, ctx) => {
+      qc.setQueryData<MatchEvent[]>(["events", matchId], (old) => {
+        if (!old) return [serverEvent];
+        return old.map((ev) =>
+          ev.id === ctx?.optimisticId ? serverEvent : ev
+        );
+      });
     },
   });
 
@@ -175,6 +256,42 @@ export function useLiveMatchData(matchId: number, isValidMatchId: boolean) {
     },
   });
 
+  const processEventQueue = useCallback(async () => {
+    if (isProcessingQueueRef.current) return;
+    isProcessingQueueRef.current = true;
+    try {
+      while (eventQueueRef.current.length > 0) {
+        const next = eventQueueRef.current.shift();
+        setPendingEventCount(eventQueueRef.current.length);
+        if (!next) continue;
+        try {
+          await addEventMutation.mutateAsync(next);
+        } catch (err: unknown) {
+          setEventSyncError(getErrorMessage(err));
+        }
+      }
+    } finally {
+      isProcessingQueueRef.current = false;
+      setPendingEventCount(0);
+    }
+  }, [addEventMutation]);
+
+  const enqueueMatchEvent = useCallback(
+    (p: {
+      playerId: number;
+      delta: 1 | -1;
+      eventType: EventType;
+      half: 1 | 2;
+      secondInMatch: number;
+    }) => {
+      setEventSyncError(null);
+      eventQueueRef.current.push(p);
+      setPendingEventCount(eventQueueRef.current.length);
+      void processEventQueue();
+    },
+    [processEventQueue],
+  );
+
   return {
     match,
     roster: rosterWithOnField,
@@ -189,6 +306,9 @@ export function useLiveMatchData(matchId: number, isValidMatchId: boolean) {
     startSecondHalfMutation,
     finishMutation,
     addEventMutation,
+    enqueueMatchEvent,
+    pendingEventCount,
+    eventSyncError,
     saveRatingsMutation,
     substitutions,
     createSubstitutionMutation,

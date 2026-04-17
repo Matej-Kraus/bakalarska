@@ -137,7 +137,7 @@ export async function addEvent(params: {
   half: 1 | 2;
   secondInMatch: number;
 }) {
-  const res = await api.post(`/matches/${params.matchId}/events`, {
+  const res = await api.post<MatchEvent>(`/matches/${params.matchId}/events`, {
     player_id: params.playerId,
     event_type: params.eventType,
     delta: params.delta,

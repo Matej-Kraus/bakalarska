@@ -231,7 +231,13 @@ export default function PlayersPage() {
                         variant="outline"
                         size="sm"
                         disabled={!isCoach || deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(p.id)}
+                        onClick={() => {
+                          const ok = window.confirm(
+                            `Opravdu smazat hráče #${p.jersey_number} ${p.first_name} ${p.last_name}?`,
+                          );
+                          if (!ok) return;
+                          deleteMutation.mutate(p.id);
+                        }}
                       >
                         Smazat
                       </Button>
@@ -240,6 +246,11 @@ export default function PlayersPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+          {playersQuery.data && playersQuery.data.length === 0 && (
+            <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              V této sezóně zatím nejsou žádní hráči. Přidej hráče ručně nebo importuj CSV.
+            </div>
           )}
 
           {createMutation.isError && (

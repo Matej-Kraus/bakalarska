@@ -97,10 +97,26 @@ export default function MatchesPage() {
     queryKey: ["matches", seasonId],
     queryFn: () => listMatches(seasonId),
   });
+  const allMatchesQuery = useQuery({
+    queryKey: ["matches", "all"],
+    queryFn: () => listMatches(),
+    refetchOnWindowFocus: false,
+  });
 
   const sorted = useMemo(() => {
     return [...(matches ?? [])].sort((a, b) => b.id - a.id);
   }, [matches]);
+  const seasonMatchCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const m of allMatchesQuery.data ?? []) {
+      counts.set(m.season_id, (counts.get(m.season_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [allMatchesQuery.data]);
+  const suggestedSeason = useMemo(() => {
+    const seasons = seasonsQuery.data ?? [];
+    return seasons.find((s) => (seasonMatchCounts.get(s.id) ?? 0) > 0) ?? null;
+  }, [seasonMatchCounts, seasonsQuery.data]);
 
   async function handleCreateMatch() {
     try {
@@ -196,7 +212,28 @@ export default function MatchesPage() {
           {isLoading ? (
             <div className="text-sm text-muted-foreground">Načítám…</div>
           ) : sorted.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Zatím žádné zápasy.</div>
+            <div className="space-y-3 rounded-xl border border-dashed p-4">
+              <div className="text-sm text-muted-foreground">
+                V této sezóně zatím nejsou žádné zápasy.
+              </div>
+              {suggestedSeason && suggestedSeason.id !== seasonId && (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">
+                    V sezóně <strong>{suggestedSeason.name}</strong> je{" "}
+                    {seasonMatchCounts.get(suggestedSeason.id) ?? 0} zápasů.
+                  </span>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSeasonId(suggestedSeason.id);
+                      setActiveSeasonId(suggestedSeason.id);
+                    }}
+                  >
+                    Přepnout na sezónu s daty
+                  </Button>
+                </div>
+              )}
+            </div>
           ) : (
             sorted.map((m) => (
               <div
