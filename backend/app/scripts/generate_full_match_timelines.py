@@ -40,6 +40,30 @@ def _get_coach_club_and_season(db: Session) -> tuple[int, Season]:
     return season.club_id, season
 
 
+def _resolve_season_for_club(db: Session, club_id: int, season_id: int | None) -> Season:
+    if season_id is not None:
+        season = (
+            db.query(Season)
+            .filter(Season.id == season_id, Season.club_id == club_id)
+            .first()
+        )
+        if not season:
+            raise RuntimeError(
+                f"Season id={season_id} was not found for club_id={club_id}."
+            )
+        return season
+
+    season = (
+        db.query(Season)
+        .filter(Season.club_id == club_id)
+        .order_by(Season.id.asc())
+        .first()
+    )
+    if not season:
+        raise RuntimeError(f"No season found for club_id={club_id}.")
+    return season
+
+
 def _delete_all_matches_for_club_season(db: Session, club_id: int, season_id: int) -> int:
     rows = (
         db.query(Match)
@@ -60,6 +84,12 @@ def main() -> None:
     )
     parser.add_argument("--matches", type=int, default=15, help="Number of matches to generate.")
     parser.add_argument("--seed", type=int, default=2026, help="Random seed for reproducibility.")
+    parser.add_argument(
+        "--season-id",
+        type=int,
+        default=None,
+        help="Target season id. If omitted, first season for selected club is used.",
+    )
     parser.add_argument(
         "--replace-existing",
         action="store_true",
@@ -111,7 +141,8 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        club_id, season = _get_coach_club_and_season(db)
+        club_id, _fallback_season = _get_coach_club_and_season(db)
+        season = _resolve_season_for_club(db, club_id, args.season_id)
         deleted = 0
         if args.replace_existing:
             deleted = _delete_all_matches_for_club_season(db, club_id, season.id)
