@@ -55,7 +55,7 @@ Z pohledu běžného uživatele aplikace umožňuje:
 ## 4. Co je potřeba před začátkem
 
 Pro používání aplikace potřebujete:
-- na webovém prohlížeci přejít na adresu http://127.0.0.1:5173
+- na webovém prohlížeci přejít na adresu [http://127.0.0.1:5173](https://bakalarska-1.onrender.com/players)
 - webový prohlížeč (doporučeno: Chrome, Edge, Safari),
 - přístupové údaje (přihlášení),
 - internetové připojení.
