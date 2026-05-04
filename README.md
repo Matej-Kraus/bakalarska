@@ -235,9 +235,6 @@ Zde určujete, kdo nastoupí do zápasu.
 
 Tato sekce se používá během zápasu v reálném čase.
 
-### [Obrázek: Live zápas]
-
-**[Obrázek: Live zápas]**
 
 ### 9.1 Spuštění zápasu
 ![Spuštění zápasu](docs/spusteni-zapasu.png)
