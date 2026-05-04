@@ -4,6 +4,10 @@ __pycache__/
 
 # Pytest cache
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage/
 
 # macOS metadata
 .DS_Store
@@ -18,3 +22,15 @@ __pycache__/
 # Local environment files
 .env
 backend/.env
+
+# Python virtual environments
+.venv/
+backend/.venv/
+
+# Frontend build/install artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Misc logs
+*.log
