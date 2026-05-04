@@ -2,6 +2,7 @@ import random
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_role
@@ -15,7 +16,6 @@ from app.schemas.match import MatchCreate, MatchOut, SeasonGenerationOut, Season
 from app.scripts.sim_match_core_v2 import (
     build_player_position_map,
     create_substitutions,
-    delete_match_data,
     ensure_lineup,
     generate_events,
     plan_substitutions,
@@ -32,6 +32,16 @@ from app.services.match_service import (
 from app.util.time import utcnow
 
 router = APIRouter(prefix="/matches", tags=["matches"])
+
+
+def _hard_delete_match_data(db: Session, match_id: int) -> None:
+    # Use explicit SQL deletes to be resilient across legacy PostgreSQL schemas.
+    db.execute(text("DELETE FROM match_events WHERE match_id = :mid"), {"mid": match_id})
+    db.execute(text("DELETE FROM match_player_stats WHERE match_id = :mid"), {"mid": match_id})
+    db.execute(text("DELETE FROM match_player_ratings WHERE match_id = :mid"), {"mid": match_id})
+    db.execute(text("DELETE FROM match_substitutions WHERE match_id = :mid"), {"mid": match_id})
+    db.execute(text("DELETE FROM match_lineups WHERE match_id = :mid"), {"mid": match_id})
+    db.execute(text("DELETE FROM matches WHERE id = :mid"), {"mid": match_id})
 
 
 @router.post("", response_model=MatchOut)
@@ -224,8 +234,7 @@ def generate_season_demo_route(
                 .all()
             )
             for m in rows:
-                delete_match_data(db, m.id)
-                db.delete(m)
+                _hard_delete_match_data(db, m.id)
             db.commit()
             deleted = len(rows)
 
