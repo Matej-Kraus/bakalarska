@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db, require_role
 from app.exceptions import AppError
 from app.models.match import Match
+from app.models.player import Player
 from app.models.season import Season
+from app.models.season_player import SeasonPlayer
 from app.models.user import User
 from app.schemas.match import MatchCreate, MatchOut, SeasonGenerationOut, SeasonGenerationRequest
 from app.scripts.sim_match_core_v2 import (
@@ -163,6 +165,29 @@ def generate_season_demo_route(
     )
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
+
+    season_player_count = (
+        db.query(SeasonPlayer)
+        .join(Player, Player.id == SeasonPlayer.player_id)
+        .filter(SeasonPlayer.season_id == season.id, Player.club_id == current_user.club_id)
+        .count()
+    )
+    if season_player_count < 12:
+        club_players = (
+            db.query(Player)
+            .filter(Player.club_id == current_user.club_id)
+            .order_by(Player.jersey_number.asc())
+            .all()
+        )
+        for p in club_players:
+            exists = (
+                db.query(SeasonPlayer)
+                .filter(SeasonPlayer.season_id == season.id, SeasonPlayer.player_id == p.id)
+                .first()
+            )
+            if not exists:
+                db.add(SeasonPlayer(season_id=season.id, player_id=p.id))
+        db.commit()
 
     rng = random.Random(payload.seed)
     opponents = [
