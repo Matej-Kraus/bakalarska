@@ -311,9 +311,8 @@ Obvyklý další krok:
 Po zápase můžete hodnotit hráče v sekci Evaluation.
 ![Hodnocení trenéra](docs/hodnoceni-trener.png)
 
-### [Obrázek: Hodnocení hráčů]
 
-**[Obrázek: Hodnocení hráčů]**
+
 
 Možnosti:
 - známka 1–10,
@@ -331,9 +330,9 @@ Důležité:
 
 Sekce: **Report / Analytics**
 
-### [Obrázek: Statistiky a analytika]
 
-**[Obrázek: Statistiky a analytika]**
+
+
 
 Co obsahuje:
 - týmové statistiky,
