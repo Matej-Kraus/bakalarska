@@ -26,22 +26,22 @@ function clamp(v: number, min: number, max: number): number {
 
 function computeAutoRating(stats: PlayerStats): number {
   const positive =
-    stats.goals * 6 +
-    stats.assists * 3.8 +
-    stats.shots_on_goal * 2 +
-    stats.shots_off_goal * 0.8 +
-    stats.passes * 0.1 +
-    stats.won_duels * 1 +
-    stats.won_balls * 0.8 +
-    stats.penalties * 2.8;
+    stats.goals * 6.3 +
+    stats.assists * 4.2 +
+    stats.shots_on_goal * 2.2 +
+    stats.shots_off_goal * 0.9 +
+    stats.passes * 0.115 +
+    stats.won_duels * 1.08 +
+    stats.won_balls * 0.92 +
+    stats.penalties * 3;
 
   const negative =
-    stats.errors * 1.2 +
-    stats.lost_balls * 0.25 +
-    stats.lost_duels * 0.45 +
-    stats.fouls * 0.3 +
-    stats.yellow_cards * 1 +
-    stats.red_cards * 3;
+    stats.errors * 1.05 +
+    stats.lost_balls * 0.22 +
+    stats.lost_duels * 0.4 +
+    stats.fouls * 0.24 +
+    stats.yellow_cards * 0.85 +
+    stats.red_cards * 2.7;
 
   // Small activity bonus so active players are not undervalued.
   const activity =
@@ -52,14 +52,14 @@ function computeAutoRating(stats: PlayerStats): number {
     stats.shots_off_goal +
     stats.won_balls +
     stats.lost_balls;
-  const activityBonus = Math.min(1.6, activity * 0.03);
+  const activityBonus = Math.min(1.95, activity * 0.035);
 
   // Slight uplift to avoid systematically low scores.
-  const score = positive - negative + activityBonus + 0.8;
+  const score = positive - negative + activityBonus + 1.2;
 
   // Map raw score into 1–10 range (soft caps).
   const rawMin = -8;
-  const rawMax = 11;
+  const rawMax = 12;
   const norm = (score - rawMin) / (rawMax - rawMin);
   const scaled = 1 + 9 * clamp(norm, 0, 1);
   return Math.round(scaled * 10) / 10; // one decimal
@@ -599,10 +599,38 @@ export default function MatchEvaluationPage() {
                       <YAxis allowDecimals={false} />
                       <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
                       <Legend />
-                      <Line type="monotone" dataKey="duels" name="Souboje" stroke="#f97316" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="fouls" name="Fauly" stroke="#ef4444" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="yellowCards" name="Žluté karty" stroke="#eab308" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="redCards" name="Červené karty" stroke="#dc2626" strokeWidth={2} dot={false} />
+                      <Line
+                        type="monotone"
+                        dataKey="duels"
+                        name="Souboje"
+                        stroke="#2563eb"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="fouls"
+                        name="Fauly"
+                        stroke="#16a34a"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="yellowCards"
+                        name="Žluté karty"
+                        stroke="#eab308"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="redCards"
+                        name="Červené karty"
+                        stroke="#dc2626"
+                        strokeWidth={2}
+                        dot={false}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

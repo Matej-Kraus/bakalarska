@@ -1,0 +1,70 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.0, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/mates/Bakalarska_prace/backend
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1
+collected 20 items
+
+tests/test_auth_rbac.py ....                                             [ 20%]
+tests/test_club_api.py ...                                               [ 35%]
+tests/test_import_export.py ..                                           [ 45%]
+tests/test_lineup_substitutions.py .....                                 [ 70%]
+tests/test_live_events_stats.py ..                                       [ 80%]
+tests/test_ratings_analytics.py ..                                       [ 90%]
+tests/test_team_analytics.py ..                                          [100%]
+
+=============================== warnings summary ===============================
+app/schemas/auth.py:24
+  /Users/mates/Bakalarska_prace/backend/app/schemas/auth.py:24: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UserOut(BaseModel):
+
+app/schemas/club.py:4
+  /Users/mates/Bakalarska_prace/backend/app/schemas/club.py:4: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ClubOut(BaseModel):
+
+app/schemas/event.py:29
+  /Users/mates/Bakalarska_prace/backend/app/schemas/event.py:29: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class MatchEventOut(BaseModel):
+
+app/schemas/rating.py:14
+  /Users/mates/Bakalarska_prace/backend/app/schemas/rating.py:14: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RatingOut(RatingItem):
+
+app/schemas/stats.py:4
+  /Users/mates/Bakalarska_prace/backend/app/schemas/stats.py:4: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class MatchPlayerStatsOut(BaseModel):
+
+app/schemas/analytics.py:36
+  /Users/mates/Bakalarska_prace/backend/app/schemas/analytics.py:36: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class TeamMatchBreakdownRow(BaseModel):
+
+app/schemas/substitution.py:11
+  /Users/mates/Bakalarska_prace/backend/app/schemas/substitution.py:11: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SubstitutionOut(BaseModel):
+
+app/schemas/player.py:10
+  /Users/mates/Bakalarska_prace/backend/app/schemas/player.py:10: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PlayerOut(PlayerCreate):
+
+app/schemas/season.py:6
+  /Users/mates/Bakalarska_prace/backend/app/schemas/season.py:6: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SeasonOut(SeasonCreate):
+
+app/schemas/match.py:17
+  /Users/mates/Bakalarska_prace/backend/app/schemas/match.py:17: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class MatchOut(BaseModel):
+
+tests/test_auth_rbac.py: 4 warnings
+tests/test_club_api.py: 3 warnings
+tests/test_import_export.py: 2 warnings
+tests/test_lineup_substitutions.py: 5 warnings
+tests/test_live_events_stats.py: 2 warnings
+tests/test_ratings_analytics.py: 2 warnings
+tests/test_team_analytics.py: 2 warnings
+  /Users/mates/Bakalarska_prace/.venv/lib/python3.14/site-packages/alembic/config.py:612: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+    util.warn_deprecated(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /Users/mates/Bakalarska_prace/docs/test-reports/backend-pytest-junit.xml -
+======================= 20 passed, 30 warnings in 55.87s =======================

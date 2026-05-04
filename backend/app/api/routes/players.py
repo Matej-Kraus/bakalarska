@@ -38,6 +38,22 @@ def create_player(
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
 
+    jersey_taken = (
+        db.query(Player.id)
+        .join(SeasonPlayer, SeasonPlayer.player_id == Player.id)
+        .filter(
+            Player.club_id == current_user.club_id,
+            SeasonPlayer.season_id == season_id,
+            Player.jersey_number == payload.jersey_number,
+        )
+        .first()
+    )
+    if jersey_taken:
+        raise HTTPException(
+            status_code=409,
+            detail="Jersey number already exists in selected season",
+        )
+
     player_data = payload.model_dump()
     player_data.pop("season_id", None)
     player = Player(club_id=current_user.club_id, **player_data)

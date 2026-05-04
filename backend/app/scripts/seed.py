@@ -14,6 +14,7 @@ from app.models.player import Player
 from app.models.season import Season
 from app.models.match import Match
 from app.models.match_lineup import MatchLineup
+from app.models.season_player import SeasonPlayer
 from app.models.user import User
 from app.security.passwords import hash_password
 
@@ -60,6 +61,15 @@ def seed_club_and_users(db: Session) -> Club:
         email_verification_token=None,
     )
     db.add(coach)
+    assistant = User(
+        club_id=club.id,
+        email="assistant@demo.local",
+        password_hash=hash_password("assistant"),
+        role="assistant",
+        email_verified=True,
+        email_verification_token=None,
+    )
+    db.add(assistant)
     db.commit()
     return club
 
@@ -122,6 +132,12 @@ def seed_season_and_match(db: Session, club: Club) -> tuple[Season, Match]:
     return season, match
 
 
+def assign_players_to_season(db: Session, season: Season, players: list[Player]) -> None:
+    for p in players:
+        db.add(SeasonPlayer(season_id=season.id, player_id=p.id))
+    db.commit()
+
+
 def seed_lineup(db: Session, match: Match, players: list[Player]) -> None:
     # 11 starterů: hráči 1..11 (dresy necháme stejné jako default)
     starters = players[:11]
@@ -162,12 +178,14 @@ def main() -> None:
         club = seed_club_and_users(db)
         players = seed_players(db, club)
         season, match = seed_season_and_match(db, club)
+        assign_players_to_season(db, season, players)
         seed_lineup(db, match, players)
 
         print("✅ Seed hotový")
         print(f"Club:   {club.id} ({club.name})")
         print("Auth:")
         print("  coach@demo.local / coach")
+        print("  assistant@demo.local / assistant")
         print(f"Season: {season.id} ({season.name})")
         print(f"Match:  {match.id} vs {match.opponent} ({match.status})")
         print("Players:", len(players))

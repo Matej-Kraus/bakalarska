@@ -11,11 +11,13 @@ from app.models.match import Match
 from app.models.season import Season
 from app.models.user import User
 from app.scripts.sim_match_core_v2 import (
+    build_player_position_map,
     create_substitutions,
     delete_match_data,
     ensure_lineup,
     generate_events,
     plan_substitutions,
+    sample_match_profile,
 )
 from app.util.time import utcnow
 
@@ -63,8 +65,18 @@ def main() -> None:
         action="store_true",
         help="Delete existing matches in selected club+season before generation.",
     )
-    parser.add_argument("--min-events", type=int, default=140, help="Minimum events per match.")
-    parser.add_argument("--max-events", type=int, default=260, help="Maximum events per match.")
+    parser.add_argument(
+        "--min-events",
+        type=int,
+        default=520,
+        help="Minimum events per match (realistic full-match dataset).",
+    )
+    parser.add_argument(
+        "--max-events",
+        type=int,
+        default=820,
+        help="Maximum events per match (realistic full-match dataset).",
+    )
     args = parser.parse_args()
 
     if args.matches <= 0:
@@ -125,7 +137,17 @@ def main() -> None:
             lineup_rows = ensure_lineup(db, m, club_id)
             starters = [lu.player_id for lu in lineup_rows if lu.role == "starter"]
             bench = [lu.player_id for lu in lineup_rows if lu.role == "sub"]
-            plans = plan_substitutions(starters=starters, bench=bench, rng=rng, min_subs=2, max_subs=5)
+            player_positions = build_player_position_map(db, starters + bench)
+            match_profile = sample_match_profile(rng)
+            plans = plan_substitutions(
+                starters=starters,
+                bench=bench,
+                rng=rng,
+                min_subs=2,
+                max_subs=5,
+                player_positions=player_positions,
+                match_profile=match_profile,
+            )
             create_substitutions(db, m, plans)
 
             generate_events(
@@ -135,6 +157,8 @@ def main() -> None:
                 plans=plans,
                 total_events=rng.randint(args.min_events, args.max_events),
                 rng=rng,
+                player_positions=player_positions,
+                match_profile=match_profile,
             )
             created_ids.append(m.id)
 

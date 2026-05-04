@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-UserRoleLiteral = Literal["coach"]
+UserRoleLiteral = Literal["coach", "assistant"]
 
 
 class LoginRequest(BaseModel):

@@ -20,6 +20,48 @@ from app.schemas.stats import MatchPlayerStatsOut
 router = APIRouter(tags=["analytics"])
 
 
+def _clamp(v: float, min_v: float, max_v: float) -> float:
+    return min(max_v, max(min_v, v))
+
+
+def _compute_auto_rating_from_stats(stats: MatchPlayerStats) -> float:
+    positive = (
+        stats.goals * 6.3
+        + stats.assists * 4.2
+        + stats.shots_on_goal * 2.2
+        + stats.shots_off_goal * 0.9
+        + stats.passes * 0.115
+        + stats.won_duels * 1.08
+        + stats.won_balls * 0.92
+        + stats.penalties * 3.0
+    )
+    negative = (
+        stats.errors * 1.05
+        + stats.lost_balls * 0.22
+        + stats.lost_duels * 0.4
+        + stats.fouls * 0.24
+        + stats.yellow_cards * 0.85
+        + stats.red_cards * 2.7
+    )
+    activity = (
+        stats.passes
+        + stats.won_duels
+        + stats.lost_duels
+        + stats.shots_on_goal
+        + stats.shots_off_goal
+        + stats.won_balls
+        + stats.lost_balls
+    )
+    activity_bonus = min(1.95, activity * 0.035)
+    score = positive - negative + activity_bonus + 1.2
+
+    raw_min = -8.0
+    raw_max = 12.0
+    norm = (score - raw_min) / (raw_max - raw_min)
+    scaled = 1 + 9 * _clamp(norm, 0, 1)
+    return round(scaled, 1)
+
+
 @router.get("/players/{player_id}/performance", response_model=list[PlayerMatchPerformanceRow])
 def player_performance(
     player_id: int,
@@ -129,13 +171,8 @@ def season_leaderboards(
             Player.first_name,
             Player.last_name,
             Player.jersey_number,
-            func.count(distinct(MatchPlayerStats.match_id)).label("games"),
-            func.sum(MatchPlayerStats.goals).label("goals"),
-            func.sum(MatchPlayerStats.assists).label("assists"),
-            func.sum(MatchPlayerStats.passes).label("passes"),
-            func.sum(MatchPlayerStats.yellow_cards).label("yellow_cards"),
-            func.sum(MatchPlayerStats.red_cards).label("red_cards"),
-            func.avg(MatchPlayerRating.rating).label("avg_rating"),
+            MatchPlayerStats,
+            MatchPlayerRating.rating.label("coach_rating"),
         )
         .join(MatchPlayerStats, MatchPlayerStats.player_id == Player.id)
         .join(Match, Match.id == MatchPlayerStats.match_id)
@@ -149,30 +186,67 @@ def season_leaderboards(
             Match.club_id == current_user.club_id,
             Match.season_id == season_id,
         )
-        .group_by(Player.id)
-        .order_by(func.sum(MatchPlayerStats.goals).desc(), func.sum(MatchPlayerStats.assists).desc())
+        .order_by(Match.match_date.asc(), Match.id.asc())
     )
 
-    def z(x):
-        return int(x or 0)
+    aggregates: dict[int, dict] = {}
+    for row in q.all():
+        pid = int(row.player_id)
+        stats: MatchPlayerStats = row.MatchPlayerStats
+        coach_rating = row.coach_rating
+
+        if pid not in aggregates:
+            aggregates[pid] = {
+                "player_id": pid,
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "jersey_number": int(row.jersey_number),
+                "games": 0,
+                "goals": 0,
+                "assists": 0,
+                "passes": 0,
+                "yellow_cards": 0,
+                "red_cards": 0,
+                "rating_sum": 0.0,
+                "rating_count": 0,
+            }
+
+        agg = aggregates[pid]
+        agg["games"] += 1
+        agg["goals"] += int(stats.goals or 0)
+        agg["assists"] += int(stats.assists or 0)
+        agg["passes"] += int(stats.passes or 0)
+        agg["yellow_cards"] += int(stats.yellow_cards or 0)
+        agg["red_cards"] += int(stats.red_cards or 0)
+
+        final_rating = float(coach_rating) if coach_rating is not None else _compute_auto_rating_from_stats(stats)
+        agg["rating_sum"] += final_rating
+        agg["rating_count"] += 1
 
     resp: list[LeaderboardRow] = []
-    for row in q.all():
+    for agg in aggregates.values():
+        avg_rating = (
+            round(agg["rating_sum"] / agg["rating_count"], 2)
+            if agg["rating_count"] > 0
+            else None
+        )
         resp.append(
             LeaderboardRow(
-                player_id=row.player_id,
-                first_name=row.first_name,
-                last_name=row.last_name,
-                jersey_number=row.jersey_number,
-                games=z(row.games),
-                goals=z(row.goals),
-                assists=z(row.assists),
-                passes=z(row.passes),
-                yellow_cards=z(row.yellow_cards),
-                red_cards=z(row.red_cards),
-                avg_rating=(float(row.avg_rating) if row.avg_rating is not None else None),
+                player_id=agg["player_id"],
+                first_name=agg["first_name"],
+                last_name=agg["last_name"],
+                jersey_number=agg["jersey_number"],
+                games=agg["games"],
+                goals=agg["goals"],
+                assists=agg["assists"],
+                passes=agg["passes"],
+                yellow_cards=agg["yellow_cards"],
+                red_cards=agg["red_cards"],
+                avg_rating=avg_rating,
             )
         )
+
+    resp.sort(key=lambda r: (r.goals, r.assists, r.avg_rating or 0), reverse=True)
     return resp
 
 

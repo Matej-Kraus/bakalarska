@@ -95,12 +95,20 @@ export default function AnalyticsPage() {
 
   const [seasonId, setSeasonId] = useState<number>(() => getActiveSeasonId() ?? 1);
   const [playerId, setPlayerId] = useState<number>(1);
+  const selectedSeasonId = useMemo(() => {
+    const seasons = seasonsQuery.data ?? [];
+    if (seasons.length === 0) return seasonId;
+    if (seasons.some((s) => s.id === seasonId)) return seasonId;
+    const active = getActiveSeasonId();
+    if (active && seasons.some((s) => s.id === active)) return active;
+    return seasons[0].id;
+  }, [seasonId, seasonsQuery.data]);
 
   const playersQuery = useQuery({
-    queryKey: ["players", seasonId],
-    queryFn: () => listPlayers(seasonId),
+    queryKey: ["players", selectedSeasonId],
+    queryFn: () => listPlayers(selectedSeasonId),
     refetchOnWindowFocus: false,
-    enabled: Number.isFinite(seasonId) && seasonId > 0,
+    enabled: Number.isFinite(selectedSeasonId) && selectedSeasonId > 0,
   });
 
   useEffect(() => {
@@ -109,51 +117,47 @@ export default function AnalyticsPage() {
   }, []);
 
   useEffect(() => {
-    if (!seasonsQuery.data || seasonsQuery.data.length === 0) return;
-    const active = getActiveSeasonId();
-    if (active && seasonsQuery.data.some((s) => s.id === active)) {
-      setSeasonId(active);
-      return;
+    if (selectedSeasonId > 0) {
+      setActiveSeasonId(selectedSeasonId);
     }
-    setSeasonId(seasonsQuery.data[0].id);
-    setActiveSeasonId(seasonsQuery.data[0].id);
-  }, [seasonsQuery.data]);
+  }, [selectedSeasonId]);
 
-  useEffect(() => {
-    if (playersQuery.data && playersQuery.data.length > 0) {
-      setPlayerId(playersQuery.data[0].id);
-    }
-  }, [playersQuery.data]);
+  const selectedPlayerId = useMemo(() => {
+    const players = playersQuery.data ?? [];
+    if (players.length === 0) return 0;
+    if (players.some((p) => p.id === playerId)) return playerId;
+    return players[0].id;
+  }, [playerId, playersQuery.data]);
 
   const teamStatsQuery = useQuery({
-    queryKey: ["team-stats", seasonId],
-    queryFn: () => teamStatsSeason(seasonId),
-    enabled: Number.isFinite(seasonId) && seasonId > 0,
+    queryKey: ["team-stats", selectedSeasonId],
+    queryFn: () => teamStatsSeason(selectedSeasonId),
+    enabled: Number.isFinite(selectedSeasonId) && selectedSeasonId > 0,
     refetchOnWindowFocus: false,
   });
 
   const teamBreakdownQuery = useQuery({
-    queryKey: ["team-matches-breakdown", seasonId],
-    queryFn: () => teamMatchesBreakdown(seasonId),
-    enabled: Number.isFinite(seasonId) && seasonId > 0,
+    queryKey: ["team-matches-breakdown", selectedSeasonId],
+    queryFn: () => teamMatchesBreakdown(selectedSeasonId),
+    enabled: Number.isFinite(selectedSeasonId) && selectedSeasonId > 0,
     refetchOnWindowFocus: false,
   });
 
   const leaderboardQuery = useQuery({
-    queryKey: ["leaderboards", seasonId],
-    queryFn: () => seasonLeaderboards(seasonId),
-    enabled: Number.isFinite(seasonId) && seasonId > 0,
+    queryKey: ["leaderboards", selectedSeasonId],
+    queryFn: () => seasonLeaderboards(selectedSeasonId),
+    enabled: Number.isFinite(selectedSeasonId) && selectedSeasonId > 0,
     refetchOnWindowFocus: false,
   });
 
   const perfQuery = useQuery({
-    queryKey: ["player-performance", playerId, seasonId],
-    queryFn: () => playerPerformance(playerId, seasonId),
+    queryKey: ["player-performance", selectedPlayerId, selectedSeasonId],
+    queryFn: () => playerPerformance(selectedPlayerId, selectedSeasonId),
     enabled:
-      Number.isFinite(playerId) &&
-      playerId > 0 &&
-      Number.isFinite(seasonId) &&
-      seasonId > 0,
+      Number.isFinite(selectedPlayerId) &&
+      selectedPlayerId > 0 &&
+      Number.isFinite(selectedSeasonId) &&
+      selectedSeasonId > 0,
     refetchOnWindowFocus: false,
   });
 
@@ -202,6 +206,30 @@ export default function AnalyticsPage() {
       ]
     : [];
 
+  const playerSeasonRatingSummary = useMemo(() => {
+    const rows = perfQuery.data ?? [];
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const ratings = rows.map((row) => {
+      const autoRating = computeAutoRatingFromStats(row.stats);
+      return row.rating ?? autoRating;
+    });
+
+    const sum = ratings.reduce((acc, v) => acc + v, 0);
+    const avg = sum / ratings.length;
+    const best = Math.max(...ratings);
+    const worst = Math.min(...ratings);
+
+    return {
+      matches: ratings.length,
+      avg,
+      best,
+      worst,
+    };
+  }, [perfQuery.data]);
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto w-full">
       <header className="space-y-1">
@@ -225,7 +253,7 @@ export default function AnalyticsPage() {
             ) : (
               <select
                 className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm"
-                value={seasonId}
+                value={selectedSeasonId}
                 onChange={(e) => {
                   const sid = Number(e.target.value);
                   setSeasonId(sid);
@@ -250,7 +278,7 @@ export default function AnalyticsPage() {
             ) : (
               <select
                 className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm"
-                value={playerId}
+                value={selectedPlayerId}
                 onChange={(e) => setPlayerId(Number(e.target.value))}
               >
                 {(playersQuery.data ?? []).map((p) => (
@@ -471,6 +499,35 @@ export default function AnalyticsPage() {
           </p>
         </CardHeader>
         <CardContent>
+          {playerSeasonRatingSummary && (
+            <div className="mb-4 grid gap-2 grid-cols-2 sm:grid-cols-4">
+              <div className="rounded-xl border bg-card/50 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Zápasy</div>
+                <div className="text-lg font-semibold tabular-nums mt-1">
+                  {playerSeasonRatingSummary.matches}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-card/50 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Sezónní hodnocení (Ø)</div>
+                <div className="text-lg font-semibold tabular-nums mt-1">
+                  {playerSeasonRatingSummary.avg.toFixed(2)}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-card/50 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Nejlepší zápas</div>
+                <div className="text-lg font-semibold tabular-nums mt-1">
+                  {playerSeasonRatingSummary.best.toFixed(1)}
+                </div>
+              </div>
+              <div className="rounded-xl border bg-card/50 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Nejslabší zápas</div>
+                <div className="text-lg font-semibold tabular-nums mt-1">
+                  {playerSeasonRatingSummary.worst.toFixed(1)}
+                </div>
+              </div>
+            </div>
+          )}
+
           {perfQuery.isLoading ? (
             <div className="text-sm text-muted-foreground">Načítám…</div>
           ) : (perfQuery.data ?? []).length === 0 ? (

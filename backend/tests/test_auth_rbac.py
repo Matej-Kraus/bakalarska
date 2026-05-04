@@ -31,3 +31,34 @@ def test_assistant_cannot_create_or_delete_player(client: TestClient):
     res = client.delete("/players/1", headers=auth_headers(token))
     assert res.status_code == 403
 
+
+def test_coach_cannot_create_duplicate_jersey_in_same_season(client: TestClient):
+    token = login_and_get_token(client, "coach@demo.local", "coach")
+    first_create = client.post(
+        "/players",
+        json={
+            "first_name": "Unique",
+            "last_name": "Player",
+            "jersey_number": 77,
+            "position": "MF",
+            "season_id": 1,
+        },
+        headers=auth_headers(token),
+    )
+    assert first_create.status_code == 200, first_create.text
+
+    res = client.post(
+        "/players",
+        json={
+            "first_name": "Dup",
+            "last_name": "Jersey",
+            "jersey_number": 77,
+            "position": "MF",
+            "season_id": 1,
+        },
+        headers=auth_headers(token),
+    )
+
+    assert res.status_code == 409
+    assert "jersey" in res.text.lower()
+

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -32,34 +32,35 @@ export default function PlayersPage() {
     refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    if (!seasonsQuery.data || seasonsQuery.data.length === 0) return;
-    if (seasonsQuery.data.some((s) => s.id === seasonId)) return;
-    const sid = seasonsQuery.data[0].id;
-    setSeasonId(sid);
-    setActiveSeasonId(sid);
-  }, [seasonsQuery.data, seasonId]);
+  const selectedSeasonId = useMemo(() => {
+    const seasons = seasonsQuery.data ?? [];
+    if (seasons.length === 0) return seasonId;
+    if (seasons.some((s) => s.id === seasonId)) return seasonId;
+    const active = getActiveSeasonId();
+    if (active && seasons.some((s) => s.id === active)) return active;
+    return seasons[0].id;
+  }, [seasonId, seasonsQuery.data]);
 
   const playersQuery = useQuery({
-    queryKey: ["players", seasonId],
-    queryFn: () => listPlayers(seasonId),
+    queryKey: ["players", selectedSeasonId],
+    queryFn: () => listPlayers(selectedSeasonId),
     refetchOnWindowFocus: false,
-    enabled: Number.isFinite(seasonId) && seasonId > 0,
+    enabled: Number.isFinite(selectedSeasonId) && selectedSeasonId > 0,
   });
 
   const createMutation = useMutation({
     mutationFn: createPlayer,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", seasonId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", selectedSeasonId] }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: deletePlayer,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", seasonId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", selectedSeasonId] }),
   });
 
   const importMutation = useMutation({
-    mutationFn: (file: File) => importPlayersCsv(file, seasonId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", seasonId] }),
+    mutationFn: (file: File) => importPlayersCsv(file, selectedSeasonId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["players", selectedSeasonId] }),
   });
 
   const [firstName, setFirstName] = useState("");
@@ -69,13 +70,18 @@ export default function PlayersPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
 
   const jerseyNumber = useMemo(() => Number(jersey || "0"), [jersey]);
+  const jerseyAlreadyUsed =
+    Number.isFinite(jerseyNumber) &&
+    jerseyNumber > 0 &&
+    (playersQuery.data ?? []).some((p) => p.jersey_number === jerseyNumber);
 
   const canCreate =
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     Number.isFinite(jerseyNumber) &&
     jerseyNumber > 0 &&
-    jerseyNumber <= 99;
+    jerseyNumber <= 99 &&
+    !jerseyAlreadyUsed;
 
   return (
     <div className="space-y-6">
@@ -89,7 +95,7 @@ export default function PlayersPage() {
             <div className="text-xs text-muted-foreground">Sezóna</div>
             <select
               className="w-full rounded-xl border bg-background px-3 py-2.5 text-sm md:w-80"
-              value={seasonId}
+              value={selectedSeasonId}
               onChange={(e) => {
                 const sid = Number(e.target.value);
                 setSeasonId(sid);
@@ -189,7 +195,7 @@ export default function PlayersPage() {
                     last_name: lastName.trim(),
                     jersey_number: jerseyNumber,
                     position: position.trim() || undefined,
-                    season_id: seasonId,
+                    season_id: selectedSeasonId,
                   })
                 }
               >
@@ -197,6 +203,11 @@ export default function PlayersPage() {
               </Button>
             </div>
           </div>
+          {jerseyAlreadyUsed && (
+            <div className="rounded-xl border border-destructive p-3 text-sm text-destructive">
+              Hráč s tímto číslem dresu už v této sezóně existuje.
+            </div>
+          )}
 
           {playersQuery.isLoading && <div>Načítám…</div>}
 
