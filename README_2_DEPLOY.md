@@ -434,3 +434,25 @@ Projekt je v tomto stavu:
 
 Tento soubor je urcen jako hlavni orientacni dokument pro dalsi psani BP i finalni predani projektu.
 
+---
+
+## 13) Provozni zaznam - produkcni pregenerovani dat
+
+Datum: 2026-05-04
+
+Provedene kroky:
+
+- backend byl nasazen na aktualni commit s endpointem pro vzdaleny run generovani
+- produkcni sezona `id=3` byla pregenerovana pres API po davkach (bez pristupu do server shellu)
+- behem procesu byly dodelany kompatibilni opravy pro starsi produkcni DB (vazby `season_players`, odolne mazani zavislych dat)
+
+Overeny vysledek:
+
+- v produkci je v sezone `id=3` celkem `20` zapasu
+- leaderboard endpoint vraci `avg_rating` bez `null` hodnot (`null_avg = 0`)
+- frontend i backend endpointy jsou dostupne (`HTTP 200`)
+
+Prakticka poznamka:
+
+- pri kontrole v prohlizeci je vhodne provest tvrdy refresh (`Ctrl/Cmd + Shift + R`), aby se neprojevila stara cache.
+

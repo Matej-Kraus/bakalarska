@@ -20,16 +20,6 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function TailwindTest() {
-  return (
-    <div className="p-6">
-      <div className="rounded-2xl border p-6 text-2xl font-bold">
-        Tailwind test
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <Routes>
@@ -49,9 +39,6 @@ export default function App() {
         <Route path="/matches/:matchId/evaluation" element={<MatchEvaluationPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/club" element={<ClubSettingsPage />} />
-
-        {/* jen test route */}
-        <Route path="/test" element={<TailwindTest />} />
 
         <Route path="*" element={<Navigate to="/players" replace />} />
       </Route>

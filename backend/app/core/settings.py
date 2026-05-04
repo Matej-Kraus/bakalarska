@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     database_url: str = DEFAULT_DB_URL
 
     frontend_base_url: str = "http://127.0.0.1:5173"
+    frontend_extra_origins: str = ""
+    allow_localhost_origins: bool = True
 
     smtp_host: str | None = None
     smtp_port: int = 587
@@ -26,6 +28,17 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str | None = None
     smtp_use_tls: bool = True
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        origins: list[str] = []
+        base = self.frontend_base_url.strip().rstrip("/")
+        if base:
+            origins.append(base)
+
+        extra = [x.strip().rstrip("/") for x in self.frontend_extra_origins.split(",")]
+        origins.extend([x for x in extra if x])
+        return list(dict.fromkeys(origins))
 
 
 settings = Settings()
