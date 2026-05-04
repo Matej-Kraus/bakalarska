@@ -214,70 +214,74 @@ def generate_season_demo_route(
     ]
     competitions = ["Liga", "Pohar", "Pratelsky zapas"]
 
-    deleted = 0
-    if payload.replace_existing:
-        rows = (
-            db.query(Match)
-            .filter(Match.club_id == current_user.club_id, Match.season_id == season.id)
-            .order_by(Match.id.asc())
-            .all()
-        )
-        for m in rows:
-            delete_match_data(db, m.id)
-            db.delete(m)
-        db.commit()
-        deleted = len(rows)
+    try:
+        deleted = 0
+        if payload.replace_existing:
+            rows = (
+                db.query(Match)
+                .filter(Match.club_id == current_user.club_id, Match.season_id == season.id)
+                .order_by(Match.id.asc())
+                .all()
+            )
+            for m in rows:
+                delete_match_data(db, m.id)
+                db.delete(m)
+            db.commit()
+            deleted = len(rows)
 
-    start_date = utcnow() - timedelta(days=payload.matches * 7)
-    created_ids: list[int] = []
+        start_date = utcnow() - timedelta(days=payload.matches * 7)
+        created_ids: list[int] = []
 
-    for i in range(payload.matches):
-        m = Match(
-            club_id=current_user.club_id,
+        for i in range(payload.matches):
+            m = Match(
+                club_id=current_user.club_id,
+                season_id=season.id,
+                opponent=opponents[i % len(opponents)],
+                competition=rng.choice(competitions),
+                match_date=start_date + timedelta(days=7 * i, hours=rng.randint(0, 3)),
+                status="planned",
+                seconds_before_live=0,
+                live_started_at=None,
+            )
+            db.add(m)
+            db.commit()
+            db.refresh(m)
+
+            lineup_rows = ensure_lineup(db, m, current_user.club_id)
+            starters = [lu.player_id for lu in lineup_rows if lu.role == "starter"]
+            bench = [lu.player_id for lu in lineup_rows if lu.role == "sub"]
+            player_positions = build_player_position_map(db, starters + bench)
+            match_profile = sample_match_profile(rng)
+            plans = plan_substitutions(
+                starters=starters,
+                bench=bench,
+                rng=rng,
+                min_subs=2,
+                max_subs=5,
+                player_positions=player_positions,
+                match_profile=match_profile,
+            )
+            create_substitutions(db, m, plans)
+
+            generate_events(
+                db,
+                match=m,
+                lineup_rows=lineup_rows,
+                plans=plans,
+                total_events=rng.randint(payload.min_events, payload.max_events),
+                rng=rng,
+                player_positions=player_positions,
+                match_profile=match_profile,
+            )
+            created_ids.append(m.id)
+
+        return SeasonGenerationOut(
             season_id=season.id,
-            opponent=opponents[i % len(opponents)],
-            competition=rng.choice(competitions),
-            match_date=start_date + timedelta(days=7 * i, hours=rng.randint(0, 3)),
-            status="planned",
-            seconds_before_live=0,
-            live_started_at=None,
+            deleted_old_matches=deleted,
+            generated_matches=len(created_ids),
+            first_match_id=created_ids[0] if created_ids else None,
+            last_match_id=created_ids[-1] if created_ids else None,
         )
-        db.add(m)
-        db.commit()
-        db.refresh(m)
-
-        lineup_rows = ensure_lineup(db, m, current_user.club_id)
-        starters = [lu.player_id for lu in lineup_rows if lu.role == "starter"]
-        bench = [lu.player_id for lu in lineup_rows if lu.role == "sub"]
-        player_positions = build_player_position_map(db, starters + bench)
-        match_profile = sample_match_profile(rng)
-        plans = plan_substitutions(
-            starters=starters,
-            bench=bench,
-            rng=rng,
-            min_subs=2,
-            max_subs=5,
-            player_positions=player_positions,
-            match_profile=match_profile,
-        )
-        create_substitutions(db, m, plans)
-
-        generate_events(
-            db,
-            match=m,
-            lineup_rows=lineup_rows,
-            plans=plans,
-            total_events=rng.randint(payload.min_events, payload.max_events),
-            rng=rng,
-            player_positions=player_positions,
-            match_profile=match_profile,
-        )
-        created_ids.append(m.id)
-
-    return SeasonGenerationOut(
-        season_id=season.id,
-        deleted_old_matches=deleted,
-        generated_matches=len(created_ids),
-        first_match_id=created_ids[0] if created_ids else None,
-        last_match_id=created_ids[-1] if created_ids else None,
-    )
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"generation_failed: {exc}")
