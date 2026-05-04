@@ -14,6 +14,23 @@ class MatchCreate(BaseModel):
     status: MatchStatusLiteral = Field(default="planned")
 
 
+class SeasonGenerationRequest(BaseModel):
+    season_id: int
+    matches: int = Field(default=20, ge=1, le=200)
+    seed: int = Field(default=2026)
+    replace_existing: bool = Field(default=True)
+    min_events: int = Field(default=520, ge=1)
+    max_events: int = Field(default=820, ge=1)
+
+
+class SeasonGenerationOut(BaseModel):
+    season_id: int
+    deleted_old_matches: int
+    generated_matches: int
+    first_match_id: int | None = None
+    last_match_id: int | None = None
+
+
 class MatchOut(BaseModel):
     id: int
     season_id: int

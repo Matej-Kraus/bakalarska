@@ -1,3 +1,6 @@
+import random
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -6,7 +9,16 @@ from app.exceptions import AppError
 from app.models.match import Match
 from app.models.season import Season
 from app.models.user import User
-from app.schemas.match import MatchCreate, MatchOut
+from app.schemas.match import MatchCreate, MatchOut, SeasonGenerationOut, SeasonGenerationRequest
+from app.scripts.sim_match_core_v2 import (
+    build_player_position_map,
+    create_substitutions,
+    delete_match_data,
+    ensure_lineup,
+    generate_events,
+    plan_substitutions,
+    sample_match_profile,
+)
 from app.services.match_service import (
     delete_match,
     finish_match,
@@ -15,6 +27,7 @@ from app.services.match_service import (
     start_match,
     start_second_half,
 )
+from app.util.time import utcnow
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -132,3 +145,114 @@ def delete_match_route(
         delete_match(db, match_id, current_user.club_id)
     except AppError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
+
+
+@router.post("/generate-season-demo/run", response_model=SeasonGenerationOut)
+def generate_season_demo_route(
+    payload: SeasonGenerationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("coach")),
+):
+    if payload.max_events < payload.min_events:
+        raise HTTPException(status_code=400, detail="max_events must be >= min_events")
+
+    season = (
+        db.query(Season)
+        .filter(Season.id == payload.season_id, Season.club_id == current_user.club_id)
+        .first()
+    )
+    if not season:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    rng = random.Random(payload.seed)
+    opponents = [
+        "Sparta",
+        "Slavia",
+        "Plzen",
+        "Liberec",
+        "Olomouc",
+        "Bohemians",
+        "Jablonec",
+        "Boleslav",
+        "Brno",
+        "Pardubice",
+        "Teplice",
+        "Hradec",
+        "Karvina",
+        "Zlin",
+        "Opava",
+        "Dukla",
+        "Banik",
+        "Sigma",
+        "Viktoria",
+        "Slovan",
+    ]
+    competitions = ["Liga", "Pohar", "Pratelsky zapas"]
+
+    deleted = 0
+    if payload.replace_existing:
+        rows = (
+            db.query(Match)
+            .filter(Match.club_id == current_user.club_id, Match.season_id == season.id)
+            .order_by(Match.id.asc())
+            .all()
+        )
+        for m in rows:
+            delete_match_data(db, m.id)
+            db.delete(m)
+        db.commit()
+        deleted = len(rows)
+
+    start_date = utcnow() - timedelta(days=payload.matches * 7)
+    created_ids: list[int] = []
+
+    for i in range(payload.matches):
+        m = Match(
+            club_id=current_user.club_id,
+            season_id=season.id,
+            opponent=opponents[i % len(opponents)],
+            competition=rng.choice(competitions),
+            match_date=start_date + timedelta(days=7 * i, hours=rng.randint(0, 3)),
+            status="planned",
+            seconds_before_live=0,
+            live_started_at=None,
+        )
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+
+        lineup_rows = ensure_lineup(db, m, current_user.club_id)
+        starters = [lu.player_id for lu in lineup_rows if lu.role == "starter"]
+        bench = [lu.player_id for lu in lineup_rows if lu.role == "sub"]
+        player_positions = build_player_position_map(db, starters + bench)
+        match_profile = sample_match_profile(rng)
+        plans = plan_substitutions(
+            starters=starters,
+            bench=bench,
+            rng=rng,
+            min_subs=2,
+            max_subs=5,
+            player_positions=player_positions,
+            match_profile=match_profile,
+        )
+        create_substitutions(db, m, plans)
+
+        generate_events(
+            db,
+            match=m,
+            lineup_rows=lineup_rows,
+            plans=plans,
+            total_events=rng.randint(payload.min_events, payload.max_events),
+            rng=rng,
+            player_positions=player_positions,
+            match_profile=match_profile,
+        )
+        created_ids.append(m.id)
+
+    return SeasonGenerationOut(
+        season_id=season.id,
+        deleted_old_matches=deleted,
+        generated_matches=len(created_ids),
+        first_match_id=created_ids[0] if created_ids else None,
+        last_match_id=created_ids[-1] if created_ids else None,
+    )
