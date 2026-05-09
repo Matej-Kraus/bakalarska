@@ -14,6 +14,7 @@ class RegisterRequest(BaseModel):
     club_name: str
     email: str
     password: str
+    role: UserRoleLiteral = "coach"
 
 
 class RegisterOut(BaseModel):

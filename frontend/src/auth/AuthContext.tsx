@@ -9,7 +9,12 @@ type AuthState = {
   user: authApi.User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (clubName: string, email: string, password: string) => Promise<void>;
+  register: (
+    clubName: string,
+    email: string,
+    password: string,
+    role?: authApi.UserRole
+  ) => Promise<void>;
   logout: () => void;
 };
 
@@ -55,8 +60,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(res.access_token);
         setUser(res.user);
       },
-      register: async (clubName: string, email: string, password: string) => {
-        const res = await authApi.register(clubName, email, password);
+      register: async (
+        clubName: string,
+        email: string,
+        password: string,
+        role: authApi.UserRole = "coach"
+      ) => {
+        const res = await authApi.register(clubName, email, password, role);
         setAccessToken(res.access_token);
         setToken(res.access_token);
         setUser(res.user);

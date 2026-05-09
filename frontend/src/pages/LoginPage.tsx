@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
+import type { UserRole } from "@/api/auth";
 
 function getErrorMessage(e: unknown): string {
   if (axios.isAxiosError(e)) {
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const [registerClubName, setRegisterClubName] = useState("");
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
+  const [registerRole, setRegisterRole] = useState<UserRole>("coach");
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
   const [registerSubmitting, setRegisterSubmitting] = useState(false);
@@ -39,8 +41,17 @@ export default function LoginPage() {
       setRegisterError(null);
       setRegisterSuccess(null);
       setRegisterSubmitting(true);
-      await auth.register(registerClubName.trim(), registerEmail.trim(), registerPassword);
-      navigate("/club?onboarding=1", { replace: true });
+      await auth.register(
+        registerClubName.trim(),
+        registerEmail.trim(),
+        registerPassword,
+        registerRole
+      );
+      if (registerRole === "coach") {
+        navigate("/club?onboarding=1", { replace: true });
+      } else {
+        navigate("/players", { replace: true });
+      }
     } catch (e: unknown) {
       setRegisterError(getErrorMessage(e));
     } finally {
@@ -59,6 +70,16 @@ export default function LoginPage() {
     } finally {
       setLoginSubmitting(false);
     }
+  }
+
+  function applyDemoCredentials(role: "coach" | "assistant") {
+    if (role === "coach") {
+      setLoginEmail("coach@demo.local");
+      setLoginPassword("coach");
+      return;
+    }
+    setLoginEmail("assistant@demo.local");
+    setLoginPassword("assistant");
   }
 
   return (
@@ -99,6 +120,18 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Role účtu</div>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={registerRole}
+                onChange={(e) => setRegisterRole(e.target.value as UserRole)}
+              >
+                <option value="coach">Trenér (plná oprávnění)</option>
+                <option value="assistant">Asistent (omezená oprávnění)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Heslo</div>
               <Input
                 type="password"
@@ -113,6 +146,9 @@ export default function LoginPage() {
             <Button className="w-full" disabled={registerSubmitting} onClick={() => void submitRegister()}>
               Registrovat
             </Button>
+            <div className="text-xs text-muted-foreground">
+              Každý účet má jednu roli. Pro druhou roli vytvoř samostatný účet.
+            </div>
           </CardContent>
         </Card>
 
@@ -121,6 +157,26 @@ export default function LoginPage() {
             <CardTitle>Přihlášení</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="rounded-xl border border-sky-500/50 bg-sky-500/10 p-3 text-sm">
+              <div className="font-medium text-sky-800 dark:text-sky-200">
+                Demo účty pro vyzkoušení
+              </div>
+              <div className="mt-1 text-sky-700 dark:text-sky-300">
+                Trenér: <code>coach@demo.local</code> / <code>coach</code>
+              </div>
+              <div className="text-sky-700 dark:text-sky-300">
+                Asistent: <code>assistant@demo.local</code> / <code>assistant</code>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Button type="button" variant="secondary" onClick={() => applyDemoCredentials("coach")}>
+                  Vyplnit trenér
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => applyDemoCredentials("assistant")}>
+                  Vyplnit asistent
+                </Button>
+              </div>
+            </div>
+
             {loginError && (
               <div className="rounded-xl border border-destructive p-3 text-sm text-destructive">
                 {loginError}

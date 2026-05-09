@@ -40,6 +40,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
     club_name = payload.club_name.strip()
     password = payload.password
+    role = payload.role
 
     if not club_name:
         raise HTTPException(status_code=400, detail="Club name is required")
@@ -64,7 +65,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         club_id=club.id,
         email=email,
         password_hash=hash_password(password),
-        role="coach",
+        role=role,
         email_verified=True,
         email_verification_token=None,
     )

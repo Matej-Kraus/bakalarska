@@ -10,10 +10,10 @@ import type { PlayerStats } from "@/api/types";
 import type { RatingRow } from "@/api/ratings";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -574,16 +574,16 @@ export default function MatchEvaluationPage() {
                 </div>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={timeline}>
+                    <BarChart data={timeline}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="minute" tickFormatter={(v) => `${v}'`} allowDecimals={false} />
                       <YAxis allowDecimals={false} />
                       <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
                       <Legend />
-                      <Line type="monotone" dataKey="goals" name="Góly" stroke="#16a34a" strokeWidth={2.5} dot={false} />
-                      <Line type="monotone" dataKey="shotsOn" name="Střely na bránu" stroke="#2563eb" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="shotsOff" name="Střely mimo" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                    </LineChart>
+                      <Bar dataKey="goals" name="Góly" fill="#16a34a" radius={[2, 2, 0, 0]} maxBarSize={22} />
+                      <Bar dataKey="shotsOn" name="Střely na bránu" fill="#2563eb" radius={[2, 2, 0, 0]} maxBarSize={22} />
+                      <Bar dataKey="shotsOff" name="Střely mimo" fill="#7c3aed" radius={[2, 2, 0, 0]} maxBarSize={22} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -593,45 +593,17 @@ export default function MatchEvaluationPage() {
                 </div>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={timeline}>
+                    <BarChart data={timeline}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="minute" tickFormatter={(v) => `${v}'`} allowDecimals={false} />
                       <YAxis allowDecimals={false} />
                       <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
                       <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="duels"
-                        name="Souboje"
-                        stroke="#2563eb"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="fouls"
-                        name="Fauly"
-                        stroke="#16a34a"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="yellowCards"
-                        name="Žluté karty"
-                        stroke="#eab308"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="redCards"
-                        name="Červené karty"
-                        stroke="#dc2626"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
+                      <Bar dataKey="duels" name="Souboje" fill="#2563eb" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                      <Bar dataKey="fouls" name="Fauly" fill="#16a34a" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                      <Bar dataKey="yellowCards" name="Žluté karty" fill="#eab308" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                      <Bar dataKey="redCards" name="Červené karty" fill="#dc2626" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -641,17 +613,17 @@ export default function MatchEvaluationPage() {
                 </div>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={timeline}>
+                    <BarChart data={timeline}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="minute" tickFormatter={(v) => `${v}'`} allowDecimals={false} />
                       <YAxis allowDecimals={false} />
                       <Tooltip labelFormatter={(v) => `${v}.–${v + 5}. minuta`} />
                       <Legend />
-                      <Line type="monotone" dataKey="passesSuccess" name="Přihrávky úspěšné" stroke="#2563eb" strokeWidth={2.5} dot={false} />
-                      <Line type="monotone" dataKey="passesUnsuccess" name="Přihrávky neúspěšné" stroke="#7c3aed" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="wonBalls" name="Zisky míče" stroke="#0f766e" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="lostBalls" name="Ztráty míče" stroke="#64748b" strokeWidth={2} dot={false} />
-                    </LineChart>
+                      <Bar dataKey="passesSuccess" name="Přihrávky úspěšné" fill="#2563eb" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                      <Bar dataKey="passesUnsuccess" name="Přihrávky neúspěšné" fill="#7c3aed" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                      <Bar dataKey="wonBalls" name="Zisky míče" fill="#0f766e" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                      <Bar dataKey="lostBalls" name="Ztráty míče" fill="#64748b" radius={[2, 2, 0, 0]} maxBarSize={20} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>

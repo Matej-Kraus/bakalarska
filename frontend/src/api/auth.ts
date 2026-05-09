@@ -8,6 +8,8 @@ export type User = {
   email_verified: boolean;
 };
 
+export type UserRole = "coach" | "assistant";
+
 type AuthSuccess = { access_token: string; token_type: string; user: User };
 
 export async function login(email: string, password: string) {
@@ -20,11 +22,12 @@ export async function me() {
   return res.data;
 }
 
-export async function register(club_name: string, email: string, password: string) {
+export async function register(club_name: string, email: string, password: string, role: UserRole = "coach") {
   const res = await api.post<AuthSuccess>("/auth/register", {
     club_name,
     email,
     password,
+    role,
   });
   return res.data;
 }
